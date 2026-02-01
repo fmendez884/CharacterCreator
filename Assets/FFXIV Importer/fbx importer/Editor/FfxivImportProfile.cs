@@ -7,6 +7,11 @@ using UnityEngine.Rendering;
 public class FfxivImportProfile : AssetPostprocessor
 {
     private const string TargetRoot = "Assets/FFXIV_Imported/";
+    private const string ImportProcessingKey = "FFXIV.ImportProcessingEnabled";
+    private const bool ImportProcessingDefault = false;
+
+    private static bool IsImportProcessingEnabled() =>
+        EditorPrefs.GetBool(ImportProcessingKey, ImportProcessingDefault);
 
     private static bool IsTarget(string path) =>
         path.StartsWith(TargetRoot, StringComparison.OrdinalIgnoreCase);
@@ -16,6 +21,7 @@ public class FfxivImportProfile : AssetPostprocessor
     // --------------------
     void OnPreprocessModel()
     {
+        if (!IsImportProcessingEnabled()) return;
         if (!IsTarget(assetPath)) return;
 
         var importer = (ModelImporter)assetImporter;
@@ -32,36 +38,40 @@ public class FfxivImportProfile : AssetPostprocessor
     // IMPORTANT: return a PERSISTENT material asset (fixes your error + makes model render correctly)
     Material OnAssignMaterialModel(Material incomingMat, Renderer renderer)
     {
+        if (!IsImportProcessingEnabled()) return incomingMat;
         if (!IsTarget(assetPath) || incomingMat == null)
             return incomingMat;
+        try
+        {
+            string fbxDir = Path.GetDirectoryName(assetPath)?.Replace("\\", "/");
+            if (string.IsNullOrEmpty(fbxDir))
+                return incomingMat;
 
-        string fbxDir = Path.GetDirectoryName(assetPath)?.Replace("\\", "/");
-        if (string.IsNullOrEmpty(fbxDir))
+            string materialsDir = $"{fbxDir}/Materials";
+            EnsureFolder(materialsDir);
+
+            string matPath = BuildMaterialPath(materialsDir, assetPath, incomingMat, renderer);
+            bool created;
+            var persistentMat = GetOrCreatePersistentMaterial(matPath, assetPath, incomingMat, out created);
+            if (persistentMat == null)
+                return incomingMat;
+
+            bool isHair = FfxivMaterialPolicy.IsHairAsset(assetPath, incomingMat?.name, renderer?.name);
+            bool changed = ApplyUrpLitAndForceOpaque(persistentMat, isHair);
+
+            if (created)
+                changed = true;
+
+            if (changed)
+                EditorUtility.SetDirty(persistentMat);
+
+            return persistentMat;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[FFXIV] OnAssignMaterialModel failed for {assetPath}: {ex}");
             return incomingMat;
-
-        string materialsDir = $"{fbxDir}/Materials";
-        EnsureFolder(materialsDir);
-
-        string safeMatName = SanitizeName(incomingMat.name);
-        string matPath = $"{materialsDir}/{safeMatName}.mat";
-
-        // Load or create persistent material asset
-        var persistentMat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
-        if (persistentMat == null)
-        {
-            persistentMat = new Material(incomingMat) { name = incomingMat.name };
-            AssetDatabase.CreateAsset(persistentMat, matPath);
         }
-        else
-        {
-            // Update it to match incoming (keeps texture links Unity discovered)
-            EditorUtility.CopySerialized(incomingMat, persistentMat);
-        }
-
-        ApplyUrpLitAndForceOpaque(persistentMat);
-        EditorUtility.SetDirty(persistentMat);
-
-        return persistentMat;
     }
 
     // --------------------
@@ -69,6 +79,7 @@ public class FfxivImportProfile : AssetPostprocessor
     // --------------------
     void OnPreprocessTexture()
     {
+        if (!IsImportProcessingEnabled()) return;
         if (!IsTarget(assetPath)) return;
 
         var importer = (TextureImporter)assetImporter;
@@ -91,36 +102,28 @@ public class FfxivImportProfile : AssetPostprocessor
     // --------------------
     // Material policy (your gripe: Surface Type Opaque)
     // --------------------
-    private static void ApplyUrpLitAndForceOpaque(Material mat)
+    private static bool ApplyUrpLitAndForceOpaque(Material mat, bool isHair)
     {
-        Shader urpLit = Shader.Find("Universal Render Pipeline/Lit");
-        if (urpLit != null && mat.shader != urpLit)
-            mat.shader = urpLit;
+        if (mat == null)
+            return false;
 
-        // --- Surface ---
-        if (mat.HasProperty("_Surface"))
-            mat.SetFloat("_Surface", 0f); // Opaque
+        var previousShader = mat.shader;
 
-        // --- Alpha Clipping ---
-        if (mat.HasProperty("_AlphaClip"))
+        FfxivMaterialPolicy.EnsureUrpLitShader(mat);
+        bool changed = previousShader != mat.shader;
+
+        changed |= FfxivMaterialPolicy.ApplyOpaqueAlphaClip(mat);
+
+        if (isHair)
         {
-            mat.SetFloat("_AlphaClip", 1f);   // enable alpha clip
-            mat.EnableKeyword("_ALPHATEST_ON");
+            changed |= FfxivMaterialPolicy.ApplyHairDoubleSided(mat, true);
+        }
+        else
+        {
+            changed |= FfxivMaterialPolicy.ApplyFrontFaceOnly(mat);
         }
 
-        if (mat.HasProperty("_Cutoff"))
-        {
-            mat.SetFloat("_Cutoff", 0.5f);    // default cutoff, tweak later
-        }
-
-        // --- Render state ---
-        mat.SetOverrideTag("RenderType", "Opaque");
-        mat.renderQueue = (int)RenderQueue.Geometry;
-
-        // --- Disable transparency (keep clip only) ---
-        mat.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
-        mat.DisableKeyword("_ALPHABLEND_ON");
-        mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        return changed;
     }
 
 
@@ -150,5 +153,85 @@ public class FfxivImportProfile : AssetPostprocessor
         foreach (char c in Path.GetInvalidFileNameChars())
             name = name.Replace(c, '_');
         return name.Trim();
+    }
+
+    private static string BuildMaterialPath(string materialsDir, string modelPath, Material incomingMat, Renderer renderer)
+    {
+        string safeName = SanitizeName(incomingMat.name);
+        string seed = BuildMaterialSeed(modelPath, incomingMat, renderer);
+        string hash = Hash128.Compute(seed).ToString();
+        return $"{materialsDir}/{safeName}_{hash}.mat";
+    }
+
+    private static string BuildMaterialSeed(string modelPath, Material incomingMat, Renderer renderer)
+    {
+        if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(incomingMat, out string guid, out long localId) &&
+            !string.IsNullOrEmpty(guid))
+        {
+            return $"{guid}:{localId}";
+        }
+
+        string rendererName = renderer != null ? renderer.name : string.Empty;
+        return $"{modelPath}|{incomingMat.name}|{rendererName}";
+    }
+
+    private static Material GetOrCreatePersistentMaterial(string matPath, string modelPath, Material incomingMat, out bool created)
+    {
+        created = false;
+
+        var persistentMat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+        if (persistentMat != null)
+            return persistentMat;
+
+        if (File.Exists(matPath))
+        {
+            return CreateFallbackMaterial(modelPath, incomingMat);
+        }
+
+        try
+        {
+            persistentMat = new Material(incomingMat) { name = incomingMat.name };
+            AssetDatabase.CreateAsset(persistentMat, matPath);
+            created = true;
+            return persistentMat;
+        }
+        catch
+        {
+            return CreateFallbackMaterial(modelPath, incomingMat);
+        }
+    }
+
+    private static Material CreateFallbackMaterial(string modelPath, Material incomingMat)
+    {
+        const string fallbackDir = "Assets/FFXIV_Imported/_Materials";
+        EnsureFolder(fallbackDir);
+
+        string safeName = SanitizeName(incomingMat.name);
+        string seed = BuildMaterialSeed(modelPath, incomingMat, null);
+        string hash = Hash128.Compute(seed).ToString();
+        string fallbackPath = AssetDatabase.GenerateUniqueAssetPath($"{fallbackDir}/{safeName}_{hash}.mat");
+
+        var fallbackMat = new Material(incomingMat) { name = incomingMat.name };
+        AssetDatabase.CreateAsset(fallbackMat, fallbackPath);
+        return fallbackMat;
+    }
+
+    [MenuItem("Tools/FFXIV/Import Processing/Enable")]
+    private static void EnableImportProcessing()
+    {
+        EditorPrefs.SetBool(ImportProcessingKey, true);
+    }
+
+    [MenuItem("Tools/FFXIV/Import Processing/Disable")]
+    private static void DisableImportProcessing()
+    {
+        EditorPrefs.SetBool(ImportProcessingKey, false);
+    }
+
+    [MenuItem("Tools/FFXIV/Import Processing/Toggle")]
+    private static void ToggleImportProcessing()
+    {
+        bool enabled = IsImportProcessingEnabled();
+        EditorPrefs.SetBool(ImportProcessingKey, !enabled);
     }
 }

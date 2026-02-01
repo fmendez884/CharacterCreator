@@ -24,6 +24,12 @@ public class CharacterCreatorEditor : Editor
     private SerializedProperty maleFaceIndex;
     private SerializedProperty femaleHairIndex;
     private SerializedProperty femaleFaceIndex;
+    private SerializedProperty useAddressablesForHairFace;
+    private SerializedProperty loadAddressablesOnAwake;
+    private SerializedProperty addressablesLabelHair;
+    private SerializedProperty addressablesLabelFace;
+    private SerializedProperty addressablesLoadTimeoutSeconds;
+    private SerializedProperty logAddressables;
 
     private void OnEnable()
     {
@@ -47,6 +53,12 @@ public class CharacterCreatorEditor : Editor
         maleFaceIndex = serializedObject.FindProperty("maleFaceIndex");
         femaleHairIndex = serializedObject.FindProperty("femaleHairIndex");
         femaleFaceIndex = serializedObject.FindProperty("femaleFaceIndex");
+        useAddressablesForHairFace = serializedObject.FindProperty("useAddressablesForHairFace");
+        loadAddressablesOnAwake = serializedObject.FindProperty("loadAddressablesOnAwake");
+        addressablesLabelHair = serializedObject.FindProperty("addressablesLabelHair");
+        addressablesLabelFace = serializedObject.FindProperty("addressablesLabelFace");
+        addressablesLoadTimeoutSeconds = serializedObject.FindProperty("addressablesLoadTimeoutSeconds");
+        logAddressables = serializedObject.FindProperty("logAddressables");
     }
 
     public override void OnInspectorGUI()
@@ -93,6 +105,27 @@ public class CharacterCreatorEditor : Editor
         EditorGUILayout.PropertyField(maleFaceIndex);
         EditorGUILayout.PropertyField(femaleHairIndex);
         EditorGUILayout.PropertyField(femaleFaceIndex);
+
+        EditorGUILayout.Space(8);
+        EditorGUILayout.LabelField("Addressables (Hair/Face)", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(useAddressablesForHairFace);
+        if (useAddressablesForHairFace.boolValue)
+        {
+            EditorGUILayout.PropertyField(loadAddressablesOnAwake);
+            EditorGUILayout.PropertyField(addressablesLabelHair);
+            EditorGUILayout.PropertyField(addressablesLabelFace);
+            EditorGUILayout.PropertyField(addressablesLoadTimeoutSeconds);
+            EditorGUILayout.PropertyField(logAddressables);
+
+            if (GUILayout.Button("Load Addressables Now"))
+            {
+                foreach (var targetObject in targets)
+                {
+                    if (targetObject is CharacterCreator creator)
+                        creator.LoadAddressables();
+                }
+            }
+        }
 
         EditorGUILayout.HelpBox("Hair/face lists are auto-collected at runtime based on name tokens.", MessageType.Info);
 

@@ -70,7 +70,8 @@ public static class FfxivImportMenu
             var mat = AssetDatabase.LoadAssetAtPath<Material>(dep);
             if (mat == null) continue;
 
-            if (ForceAlphaHashedLikeUrp(mat))
+            bool isHair = FfxivMaterialPolicy.IsHairAsset(dep, mat.name);
+            if (ForceAlphaHashedLikeUrp(mat, isHair))
             {
                 EditorUtility.SetDirty(mat);
                 count++;
@@ -83,36 +84,19 @@ public static class FfxivImportMenu
     // URP "Alpha Hashed-like" approximation:
     // - Opaque surface (depth write)
     // - Alpha clip ON (stable, avoids sorting/see-through weirdness)
-    private static bool ForceAlphaHashedLikeUrp(Material mat)
+    private static bool ForceAlphaHashedLikeUrp(Material mat, bool isHair)
     {
-        if (!mat.HasProperty("_Surface"))
-            return false; // not URP Lit/Simple Lit style
+        bool changed = FfxivMaterialPolicy.ApplyOpaqueAlphaClip(mat);
 
-        bool changed = false;
-
-        changed |= SetFloat(mat, "_Surface", 0f); // 0 = Opaque
-        mat.SetOverrideTag("RenderType", "Opaque");
-        mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
-
-        if (mat.HasProperty("_AlphaClip"))
-            changed |= SetFloat(mat, "_AlphaClip", 1f);
-
-        if (mat.HasProperty("_Cutoff"))
-            changed |= SetFloat(mat, "_Cutoff", 0.5f);
-
-        mat.EnableKeyword("_ALPHATEST_ON");
-        mat.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
-        mat.DisableKeyword("_ALPHABLEND_ON");
-        mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        if (isHair)
+        {
+            changed |= FfxivMaterialPolicy.ApplyHairDoubleSided(mat, true);
+        }
+        else
+        {
+            changed |= FfxivMaterialPolicy.ApplyFrontFaceOnly(mat);
+        }
 
         return changed;
-    }
-
-    private static bool SetFloat(Material mat, string prop, float value)
-    {
-        if (!mat.HasProperty(prop)) return false;
-        if (Mathf.Approximately(mat.GetFloat(prop), value)) return false;
-        mat.SetFloat(prop, value);
-        return true;
     }
 }

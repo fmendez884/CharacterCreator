@@ -8,7 +8,7 @@ public static class BatchImportFbxFromDisk
 {
     private const string TargetRoot = "Assets/FFXIV_Imported";
 
-    [MenuItem("Tools/FFXIV/Batch Import FBXs (Overwrite + Apply Import Profile)")]
+    [MenuItem("Tools/FFXIV/Batch Import FBXs (Skip Unchanged + Apply Import Profile)")]
     public static void ImportFolderRecursiveOverwrite()
     {
         string sourceRoot = EditorUtility.OpenFolderPanel("Select folder containing FBXs", "", "");
@@ -23,15 +23,15 @@ public static class BatchImportFbxFromDisk
 
         var importedAssetPaths = new List<string>();
         int copied = 0;
+        int skippedExisting = 0;
+        int skippedUnchanged = 0;
 
         AssetDatabase.DisallowAutoRefresh();
         try
         {
-            foreach (var srcRaw in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
+            foreach (var srcRaw in Directory.EnumerateFiles(sourceRoot, "*.fbx", SearchOption.AllDirectories))
             {
                 string src = srcRaw.Replace('\\', '/');
-                if (!src.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase))
-                    continue;
 
                 // Keep relative structure
                 string rel = src.Substring(sourceRoot.Length).TrimStart('/');
@@ -40,8 +40,20 @@ public static class BatchImportFbxFromDisk
 
                 EnsureFolderAbsolute(Path.GetDirectoryName(dstAbs).Replace('\\', '/'), assetsAbs);
 
-                // OVERWRITE so changes actually apply
-                File.Copy(src, dstAbs, overwrite: true);
+                if (File.Exists(dstAbs))
+                {
+                    if (IsSameFile(src, dstAbs))
+                    {
+                        skippedUnchanged++;
+                        continue;
+                    }
+
+                    skippedExisting++;
+                    continue;
+                }
+
+                File.Copy(src, dstAbs, overwrite: false);
+                CopyTimestamp(src, dstAbs);
                 copied++;
 
                 importedAssetPaths.Add(dstAssetPath);
@@ -57,7 +69,7 @@ public static class BatchImportFbxFromDisk
         try
         {
             foreach (var assetPath in importedAssetPaths)
-                AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
+                AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.Default);
         }
         finally
         {
@@ -69,7 +81,10 @@ public static class BatchImportFbxFromDisk
 
         EditorUtility.DisplayDialog(
             "Batch Import Complete",
-            $"Copied & imported: {copied} FBX file(s)\n\nInto:\n{TargetRoot}",
+            $"Copied & imported: {copied} FBX file(s)\n" +
+            $"Skipped unchanged: {skippedUnchanged}\n" +
+            $"Skipped existing (different): {skippedExisting}\n\n" +
+            $"Into:\n{TargetRoot}",
             "OK"
         );
     }
@@ -103,5 +118,28 @@ public static class BatchImportFbxFromDisk
         rel = rel.TrimEnd('/');
 
         EnsureFolder(rel);
+    }
+
+    private static bool IsSameFile(string src, string dst)
+    {
+        var srcInfo = new FileInfo(src);
+        var dstInfo = new FileInfo(dst);
+
+        if (!srcInfo.Exists || !dstInfo.Exists)
+            return false;
+
+        if (srcInfo.Length != dstInfo.Length)
+            return false;
+
+        DateTime srcTime = srcInfo.LastWriteTimeUtc;
+        DateTime dstTime = dstInfo.LastWriteTimeUtc;
+
+        return srcTime == dstTime;
+    }
+
+    private static void CopyTimestamp(string src, string dst)
+    {
+        DateTime srcTime = File.GetLastWriteTimeUtc(src);
+        File.SetLastWriteTimeUtc(dst, srcTime);
     }
 }

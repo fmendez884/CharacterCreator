@@ -2,6 +2,10 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+#if ENABLE_ADDRESSABLES
+using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
+#endif
 
 [DisallowMultipleComponent]
 public class CharacterCreator : MonoBehaviour
@@ -63,25 +67,48 @@ public class CharacterCreator : MonoBehaviour
 
     public event Action Changed;
 
+    [Header("Addressables (Hair/Face)")]
+    [SerializeField] private bool useAddressablesForHairFace = true;
+    [SerializeField] private bool loadAddressablesOnAwake = true;
+    [SerializeField] private string addressablesLabelHair = "Hair";
+    [SerializeField] private string addressablesLabelFace = "Face";
+    [SerializeField] private float addressablesLoadTimeoutSeconds = 10f;
+    [SerializeField] private bool logAddressables = true;
+
+    private readonly List<string> maleHairKeys = new();
+    private readonly List<string> maleFaceKeys = new();
+    private readonly List<string> femaleHairKeys = new();
+    private readonly List<string> femaleFaceKeys = new();
+#if ENABLE_ADDRESSABLES
+    private AsyncOperationHandle<IList<GameObject>> hairLoadHandle;
+    private AsyncOperationHandle<IList<GameObject>> faceLoadHandle;
+    private bool hairHandleValid;
+    private bool faceHandleValid;
+#endif
+    private GameObject maleHairInstance;
+    private GameObject maleFaceInstance;
+    private GameObject femaleHairInstance;
+    private GameObject femaleFaceInstance;
+
     public Gender CurrentGender => gender;
     public Category CurrentCategory => category;
     public string FilterText => filterText;
     public int CurrentHairIndex => GetHairIndex(gender);
     public int CurrentFaceIndex => GetFaceIndex(gender);
 
-    public int GetHairCount(Gender forGender) => GetHairList(forGender).Count;
-    public int GetFaceCount(Gender forGender) => GetFaceList(forGender).Count;
+    public int GetHairCount(Gender forGender) => GetOptionCount(Category.Hair, forGender);
+    public int GetFaceCount(Gender forGender) => GetOptionCount(Category.Face, forGender);
 
-    public string GetCurrentHairName() => GetItemName(GetHairList(gender), CurrentHairIndex);
-    public string GetCurrentFaceName() => GetItemName(GetFaceList(gender), CurrentFaceIndex);
-    public string GetCurrentOptionName() => GetItemName(GetOptionList(category, gender), GetOptionIndex(category, gender));
+    public string GetCurrentHairName() => GetItemName(GetOptionNames(Category.Hair, gender), CurrentHairIndex);
+    public string GetCurrentFaceName() => GetItemName(GetOptionNames(Category.Face, gender), CurrentFaceIndex);
+    public string GetCurrentOptionName() => GetItemName(GetOptionNames(category, gender), GetOptionIndex(category, gender));
 
     public int GetFilteredCount(Category forCategory) =>
-        GetFilteredIndices(GetOptionList(forCategory, gender), filterText).Count;
+        GetFilteredIndices(GetOptionNames(forCategory, gender), filterText).Count;
 
     public int GetFilteredPosition(Category forCategory)
     {
-        var list = GetOptionList(forCategory, gender);
+        var list = GetOptionNames(forCategory, gender);
         var indices = GetFilteredIndices(list, filterText);
         if (indices.Count == 0)
             return 0;
@@ -103,7 +130,15 @@ public class CharacterCreator : MonoBehaviour
         if (autoCollectFromScene)
             AutoCollectFromScene();
 
+        if (useAddressablesForHairFace && loadAddressablesOnAwake)
+            LoadAddressables();
+
         ApplySelection();
+    }
+
+    private void OnDestroy()
+    {
+        ReleaseAddressables();
     }
 
     private void OnValidate()
@@ -145,11 +180,11 @@ public class CharacterCreator : MonoBehaviour
     {
         if (gender == Gender.Male)
         {
-            maleHairIndex = ClampIndex(index, maleHairs.Count);
+            maleHairIndex = ClampIndex(index, GetOptionCount(Category.Hair, Gender.Male));
         }
         else
         {
-            femaleHairIndex = ClampIndex(index, femaleHairs.Count);
+            femaleHairIndex = ClampIndex(index, GetOptionCount(Category.Hair, Gender.Female));
         }
 
         ApplySelection();
@@ -159,11 +194,11 @@ public class CharacterCreator : MonoBehaviour
     {
         if (gender == Gender.Male)
         {
-            maleFaceIndex = ClampIndex(index, maleFaces.Count);
+            maleFaceIndex = ClampIndex(index, GetOptionCount(Category.Face, Gender.Male));
         }
         else
         {
-            femaleFaceIndex = ClampIndex(index, femaleFaces.Count);
+            femaleFaceIndex = ClampIndex(index, GetOptionCount(Category.Face, Gender.Female));
         }
 
         ApplySelection();
@@ -173,11 +208,11 @@ public class CharacterCreator : MonoBehaviour
     {
         if (gender == Gender.Male)
         {
-            maleHairIndex = CycleIndex(maleHairIndex, maleHairs.Count, 1);
+            maleHairIndex = CycleIndex(maleHairIndex, GetOptionCount(Category.Hair, Gender.Male), 1);
         }
         else
         {
-            femaleHairIndex = CycleIndex(femaleHairIndex, femaleHairs.Count, 1);
+            femaleHairIndex = CycleIndex(femaleHairIndex, GetOptionCount(Category.Hair, Gender.Female), 1);
         }
 
         ApplySelection();
@@ -187,11 +222,11 @@ public class CharacterCreator : MonoBehaviour
     {
         if (gender == Gender.Male)
         {
-            maleHairIndex = CycleIndex(maleHairIndex, maleHairs.Count, -1);
+            maleHairIndex = CycleIndex(maleHairIndex, GetOptionCount(Category.Hair, Gender.Male), -1);
         }
         else
         {
-            femaleHairIndex = CycleIndex(femaleHairIndex, femaleHairs.Count, -1);
+            femaleHairIndex = CycleIndex(femaleHairIndex, GetOptionCount(Category.Hair, Gender.Female), -1);
         }
 
         ApplySelection();
@@ -201,11 +236,11 @@ public class CharacterCreator : MonoBehaviour
     {
         if (gender == Gender.Male)
         {
-            maleFaceIndex = CycleIndex(maleFaceIndex, maleFaces.Count, 1);
+            maleFaceIndex = CycleIndex(maleFaceIndex, GetOptionCount(Category.Face, Gender.Male), 1);
         }
         else
         {
-            femaleFaceIndex = CycleIndex(femaleFaceIndex, femaleFaces.Count, 1);
+            femaleFaceIndex = CycleIndex(femaleFaceIndex, GetOptionCount(Category.Face, Gender.Female), 1);
         }
 
         ApplySelection();
@@ -215,11 +250,11 @@ public class CharacterCreator : MonoBehaviour
     {
         if (gender == Gender.Male)
         {
-            maleFaceIndex = CycleIndex(maleFaceIndex, maleFaces.Count, -1);
+            maleFaceIndex = CycleIndex(maleFaceIndex, GetOptionCount(Category.Face, Gender.Male), -1);
         }
         else
         {
-            femaleFaceIndex = CycleIndex(femaleFaceIndex, femaleFaces.Count, -1);
+            femaleFaceIndex = CycleIndex(femaleFaceIndex, GetOptionCount(Category.Face, Gender.Female), -1);
         }
 
         ApplySelection();
@@ -262,6 +297,47 @@ public class CharacterCreator : MonoBehaviour
         ApplySelection();
     }
 
+    [ContextMenu("Load Addressables (Hair/Face)")]
+    public void LoadAddressables()
+    {
+        if (!useAddressablesForHairFace)
+            return;
+
+        _ = addressablesLoadTimeoutSeconds;
+
+        ReleaseAddressables();
+
+#if ENABLE_ADDRESSABLES
+
+        if (!string.IsNullOrWhiteSpace(addressablesLabelHair))
+        {
+            hairLoadHandle = Addressables.LoadAssetsAsync<GameObject>(addressablesLabelHair, null);
+            hairHandleValid = true;
+            hairLoadHandle.Completed += handle =>
+            {
+                if (handle.Status == AsyncOperationStatus.Succeeded)
+                    UpdateAddressableKeys(handle.Result, Category.Hair);
+                ApplySelection();
+            };
+        }
+
+        if (!string.IsNullOrWhiteSpace(addressablesLabelFace))
+        {
+            faceLoadHandle = Addressables.LoadAssetsAsync<GameObject>(addressablesLabelFace, null);
+            faceHandleValid = true;
+            faceLoadHandle.Completed += handle =>
+            {
+                if (handle.Status == AsyncOperationStatus.Succeeded)
+                    UpdateAddressableKeys(handle.Result, Category.Face);
+                ApplySelection();
+            };
+        }
+#else
+        if (logAddressables)
+            Debug.LogWarning("[CharacterCreator] Addressables package not available. Install Addressables to enable hair/face loading.");
+#endif
+    }
+
     private void ApplySelection()
     {
         EnsureCharacterRoot();
@@ -274,10 +350,17 @@ public class CharacterCreator : MonoBehaviour
         ApplyGroup(maleBases, gender == Gender.Male);
         ApplyGroup(femaleBases, gender == Gender.Female);
 
-        ApplyList(maleHairs, gender == Gender.Male ? maleHairIndex : -1);
-        ApplyList(maleFaces, gender == Gender.Male ? maleFaceIndex : -1);
-        ApplyList(femaleHairs, gender == Gender.Female ? femaleHairIndex : -1);
-        ApplyList(femaleFaces, gender == Gender.Female ? femaleFaceIndex : -1);
+        if (useAddressablesForHairFace)
+        {
+            ApplyAddressableSelection();
+        }
+        else
+        {
+            ApplyList(maleHairs, gender == Gender.Male ? maleHairIndex : -1);
+            ApplyList(maleFaces, gender == Gender.Male ? maleFaceIndex : -1);
+            ApplyList(femaleHairs, gender == Gender.Female ? femaleHairIndex : -1);
+            ApplyList(femaleFaces, gender == Gender.Female ? femaleFaceIndex : -1);
+        }
 
         Changed?.Invoke();
     }
@@ -291,6 +374,11 @@ public class CharacterCreator : MonoBehaviour
         femaleFaces.Clear();
         maleBases.Clear();
         femaleBases.Clear();
+
+        maleHairKeys.Clear();
+        maleFaceKeys.Clear();
+        femaleHairKeys.Clear();
+        femaleFaceKeys.Clear();
 
         Transform[] roots = ResolveScanRoots();
 
@@ -356,6 +444,185 @@ public class CharacterCreator : MonoBehaviour
 
         if (logScanResults)
             LogScanSummary(roots);
+    }
+
+    private void ApplyAddressableSelection()
+    {
+        if (!TryEnsureAddressableKeys())
+            return;
+
+        string hairKey = GetKeyForGender(Category.Hair, gender);
+        string faceKey = GetKeyForGender(Category.Face, gender);
+
+        if (gender == Gender.Male)
+        {
+            SwapAddressableInstance(maleHairInstance, instance => maleHairInstance = instance, hairKey, "Hair");
+            SwapAddressableInstance(maleFaceInstance, instance => maleFaceInstance = instance, faceKey, "Face");
+
+            SetInstanceActive(femaleHairInstance, false);
+            SetInstanceActive(femaleFaceInstance, false);
+        }
+        else
+        {
+            SwapAddressableInstance(femaleHairInstance, instance => femaleHairInstance = instance, hairKey, "Hair");
+            SwapAddressableInstance(femaleFaceInstance, instance => femaleFaceInstance = instance, faceKey, "Face");
+
+            SetInstanceActive(maleHairInstance, false);
+            SetInstanceActive(maleFaceInstance, false);
+        }
+    }
+
+    private bool TryEnsureAddressableKeys()
+    {
+#if ENABLE_ADDRESSABLES
+        if (!hairHandleValid && !faceHandleValid)
+        {
+            if (logAddressables)
+                Debug.LogWarning("[CharacterCreator] Addressables not loaded. Call LoadAddressables first.");
+            return false;
+        }
+
+        if (hairHandleValid && hairLoadHandle.IsValid() && hairLoadHandle.Status == AsyncOperationStatus.Succeeded)
+            UpdateAddressableKeys(hairLoadHandle.Result, Category.Hair);
+
+        if (faceHandleValid && faceLoadHandle.IsValid() && faceLoadHandle.Status == AsyncOperationStatus.Succeeded)
+            UpdateAddressableKeys(faceLoadHandle.Result, Category.Face);
+
+        return true;
+#else
+        return false;
+#endif
+    }
+
+    private void UpdateAddressableKeys(IList<GameObject> assets, Category category)
+    {
+        if (assets == null)
+            return;
+
+        var maleKeys = category == Category.Hair ? maleHairKeys : maleFaceKeys;
+        var femaleKeys = category == Category.Hair ? femaleHairKeys : femaleFaceKeys;
+
+        maleKeys.Clear();
+        femaleKeys.Clear();
+
+        foreach (var asset in assets)
+        {
+            if (asset == null)
+                continue;
+
+            string name = asset.name;
+            bool isHair = MatchesToken(name, hairToken);
+            bool isFace = MatchesToken(name, faceToken);
+            bool isMale = MatchesToken(name, maleToken);
+            bool isFemale = MatchesToken(name, femaleToken);
+
+            if (!isMale && !isFemale)
+                continue;
+
+            if (category == Category.Hair && !isHair)
+                continue;
+
+            if (category == Category.Face && !isFace)
+                continue;
+
+            if (isMale)
+                AddUnique(maleKeys, name);
+
+            if (isFemale)
+                AddUnique(femaleKeys, name);
+        }
+
+        SortByName(maleKeys);
+        SortByName(femaleKeys);
+    }
+
+    private string GetKeyForGender(Category forCategory, Gender forGender)
+    {
+        var list = GetKeyList(forCategory, forGender);
+        int index = GetOptionIndex(forCategory, forGender);
+        if (index < 0 || index >= list.Count)
+            return null;
+
+        return list[index];
+    }
+
+    private void SwapAddressableInstance(GameObject currentInstance, Action<GameObject> assignInstance, string key, string label)
+    {
+        if (string.IsNullOrEmpty(key))
+        {
+            if (currentInstance != null)
+                currentInstance.SetActive(false);
+            return;
+        }
+
+        if (currentInstance != null && string.Equals(currentInstance.name, key, StringComparison.OrdinalIgnoreCase))
+        {
+            currentInstance.SetActive(true);
+            return;
+        }
+
+#if ENABLE_ADDRESSABLES
+        if (currentInstance != null)
+        {
+            Addressables.ReleaseInstance(currentInstance);
+            assignInstance?.Invoke(null);
+        }
+
+        Addressables.InstantiateAsync(key, characterRoot).Completed += handle =>
+        {
+            if (handle.Status != AsyncOperationStatus.Succeeded)
+            {
+                if (logAddressables)
+                    Debug.LogWarning($"[CharacterCreator] Failed to load {label} '{key}'.");
+                return;
+            }
+
+            var instance = handle.Result;
+            instance.name = key;
+            assignInstance?.Invoke(instance);
+        };
+#endif
+    }
+
+    private void ReleaseAddressables()
+    {
+#if ENABLE_ADDRESSABLES
+        if (maleHairInstance != null)
+            Addressables.ReleaseInstance(maleHairInstance);
+        if (maleFaceInstance != null)
+            Addressables.ReleaseInstance(maleFaceInstance);
+        if (femaleHairInstance != null)
+            Addressables.ReleaseInstance(femaleHairInstance);
+        if (femaleFaceInstance != null)
+            Addressables.ReleaseInstance(femaleFaceInstance);
+
+        maleHairInstance = null;
+        maleFaceInstance = null;
+        femaleHairInstance = null;
+        femaleFaceInstance = null;
+
+        if (hairHandleValid && hairLoadHandle.IsValid())
+            Addressables.Release(hairLoadHandle);
+        if (faceHandleValid && faceLoadHandle.IsValid())
+            Addressables.Release(faceLoadHandle);
+
+#endif
+
+#if ENABLE_ADDRESSABLES
+        hairHandleValid = false;
+        faceHandleValid = false;
+#endif
+
+        maleHairKeys.Clear();
+        maleFaceKeys.Clear();
+        femaleHairKeys.Clear();
+        femaleFaceKeys.Clear();
+    }
+
+    private static void SetInstanceActive(GameObject instance, bool active)
+    {
+        if (instance != null)
+            instance.SetActive(active);
     }
 
     private void ApplyList(List<GameObject> list, int selectedIndex)
@@ -470,10 +737,10 @@ public class CharacterCreator : MonoBehaviour
 
     private void ClampIndices()
     {
-        maleHairIndex = ClampIndex(maleHairIndex, maleHairs.Count);
-        maleFaceIndex = ClampIndex(maleFaceIndex, maleFaces.Count);
-        femaleHairIndex = ClampIndex(femaleHairIndex, femaleHairs.Count);
-        femaleFaceIndex = ClampIndex(femaleFaceIndex, femaleFaces.Count);
+        maleHairIndex = ClampIndex(maleHairIndex, GetOptionCount(Category.Hair, Gender.Male));
+        maleFaceIndex = ClampIndex(maleFaceIndex, GetOptionCount(Category.Face, Gender.Male));
+        femaleHairIndex = ClampIndex(femaleHairIndex, GetOptionCount(Category.Hair, Gender.Female));
+        femaleFaceIndex = ClampIndex(femaleFaceIndex, GetOptionCount(Category.Face, Gender.Female));
     }
 
     private void EnsureSelectionMatchesFilter(Gender forGender)
@@ -484,7 +751,7 @@ public class CharacterCreator : MonoBehaviour
 
     private void EnsureSelectionMatchesFilter(Gender forGender, Category forCategory)
     {
-        var list = GetOptionList(forCategory, forGender);
+        var list = GetOptionNames(forCategory, forGender);
         var indices = GetFilteredIndices(list, filterText);
         if (indices.Count == 0)
         {
@@ -527,7 +794,7 @@ public class CharacterCreator : MonoBehaviour
 
     private void StepOption(Category forCategory, int delta)
     {
-        var list = GetOptionList(forCategory, gender);
+        var list = GetOptionNames(forCategory, gender);
         var indices = GetFilteredIndices(list, filterText);
         if (indices.Count == 0)
         {
@@ -620,9 +887,20 @@ public class CharacterCreator : MonoBehaviour
             list.Add(go);
     }
 
+    private static void AddUnique(List<string> list, string key)
+    {
+        if (!string.IsNullOrEmpty(key) && !list.Contains(key))
+            list.Add(key);
+    }
+
     private static void SortByName(List<GameObject> list)
     {
         list.Sort((a, b) => string.Compare(a != null ? a.name : string.Empty, b != null ? b.name : string.Empty, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void SortByName(List<string> list)
+    {
+        list.Sort((a, b) => string.Compare(a ?? string.Empty, b ?? string.Empty, StringComparison.OrdinalIgnoreCase));
     }
 
     private Transform[] ResolveScanRoots()
@@ -689,8 +967,29 @@ public class CharacterCreator : MonoBehaviour
     private int GetFaceIndex(Gender forGender) =>
         forGender == Gender.Male ? maleFaceIndex : femaleFaceIndex;
 
-    private List<GameObject> GetOptionList(Category forCategory, Gender forGender) =>
-        forCategory == Category.Hair ? GetHairList(forGender) : GetFaceList(forGender);
+    private IReadOnlyList<string> GetOptionNames(Category forCategory, Gender forGender)
+    {
+        if (useAddressablesForHairFace)
+            return GetKeyList(forCategory, forGender);
+
+        return forCategory == Category.Hair ? GetNameList(GetHairList(forGender)) : GetNameList(GetFaceList(forGender));
+    }
+
+    private int GetOptionCount(Category forCategory, Gender forGender)
+    {
+        if (useAddressablesForHairFace)
+            return GetKeyList(forCategory, forGender).Count;
+
+        return forCategory == Category.Hair ? GetHairList(forGender).Count : GetFaceList(forGender).Count;
+    }
+
+    private List<string> GetKeyList(Category forCategory, Gender forGender)
+    {
+        if (forCategory == Category.Hair)
+            return forGender == Gender.Male ? maleHairKeys : femaleHairKeys;
+
+        return forGender == Gender.Male ? maleFaceKeys : femaleFaceKeys;
+    }
 
     private int GetOptionIndex(Category forCategory, Gender forGender) =>
         forCategory == Category.Hair ? GetHairIndex(forGender) : GetFaceIndex(forGender);
@@ -713,27 +1012,35 @@ public class CharacterCreator : MonoBehaviour
         }
     }
 
-    private static List<int> GetFilteredIndices(List<GameObject> list, string filter)
+    private static List<int> GetFilteredIndices(IReadOnlyList<string> list, string filter)
     {
         var indices = new List<int>();
         for (int i = 0; i < list.Count; i++)
         {
             var item = list[i];
-            if (item == null)
+            if (string.IsNullOrEmpty(item))
                 continue;
 
-            if (MatchesFilter(item.name, filter))
+            if (MatchesFilter(item, filter))
                 indices.Add(i);
         }
 
         return indices;
     }
 
-    private static string GetItemName(List<GameObject> list, int index)
+    private static string GetItemName(IReadOnlyList<string> list, int index)
     {
         if (index < 0 || index >= list.Count)
             return string.Empty;
 
-        return list[index] != null ? list[index].name : string.Empty;
+        return list[index] ?? string.Empty;
+    }
+
+    private static List<string> GetNameList(List<GameObject> list)
+    {
+        var names = new List<string>(list.Count);
+        foreach (var item in list)
+            names.Add(item != null ? item.name : null);
+        return names;
     }
 }

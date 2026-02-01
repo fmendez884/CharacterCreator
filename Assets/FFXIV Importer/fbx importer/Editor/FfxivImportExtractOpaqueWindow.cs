@@ -100,8 +100,10 @@ public class FfxivImportExtractOpaqueWindow : EditorWindow
                 extractedCount++;
             }
 
-            // Force URP surface type opaque on the extracted material
-            if (ForceOpaqueUrp(externalMat))
+            bool isHair = FfxivMaterialPolicy.IsHairAsset(dstFbxPath, embeddedMat.name);
+
+            // Force URP opaque + alpha clip; double-sided for hair, front-only for others
+            if (ForceOpaqueUrp(externalMat, isHair))
             {
                 EditorUtility.SetDirty(externalMat);
                 opaqueCount++;
@@ -130,35 +132,20 @@ public class FfxivImportExtractOpaqueWindow : EditorWindow
         );
     }
 
-    private static bool ForceOpaqueUrp(Material mat)
+    private static bool ForceOpaqueUrp(Material mat, bool isHair)
     {
-        // URP Lit/Simple Lit materials expose _Surface
-        if (!mat.HasProperty("_Surface"))
-            return false;
+        bool changed = FfxivMaterialPolicy.ApplyOpaqueAlphaClip(mat);
 
-        bool changed = false;
-
-        // 0 = Opaque, 1 = Transparent
-        changed |= SetFloat(mat, "_Surface", 0f);
-
-        // Make render state consistent with opaque
-        mat.SetOverrideTag("RenderType", "Opaque");
-        mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
-
-        // Disable transparency keywords
-        mat.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
-        mat.DisableKeyword("_ALPHABLEND_ON");
-        mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        if (isHair)
+        {
+            changed |= FfxivMaterialPolicy.ApplyHairDoubleSided(mat, true);
+        }
+        else
+        {
+            changed |= FfxivMaterialPolicy.ApplyFrontFaceOnly(mat);
+        }
 
         return changed;
-    }
-
-    private static bool SetFloat(Material mat, string prop, float value)
-    {
-        if (!mat.HasProperty(prop)) return false;
-        if (Mathf.Approximately(mat.GetFloat(prop), value)) return false;
-        mat.SetFloat(prop, value);
-        return true;
     }
 
     private static void EnsureFolder(string folderPath)
