@@ -44,11 +44,15 @@ MonoBehaviour:
   m_BuildAddressablesWithPlayerBuild: 0
   m_overridePlayerVersion: '[UnityEditor.PlayerSettings.bundleVersion]'
   m_GroupAssets:
+  - {fileID: 11400000, guid: 479b0ddd962b13542bf50c6bd0cf48c8, type: 2}
+  - {fileID: 11400000, guid: 7c54a4cb6027b044ba47a5b7651232eb, type: 2}
   - {fileID: 11400000, guid: 1e3116764da00324798a5c0e42f759ce, type: 2}
   - {fileID: 11400000, guid: 9d1402083e0e0e3489c2437a2b1c8896, type: 2}
+  - {fileID: 11400000, guid: fec9cb1aa1079da4c860fd1829ad8330, type: 2}
   - {fileID: 11400000, guid: 17225e6f46b44764c800b4853735eedb, type: 2}
   - {fileID: 11400000, guid: 98e008a70f85dc647abceee7a0997cab, type: 2}
   - {fileID: 11400000, guid: bf74b7a29c15eb04cb43750d0c25766c, type: 2}
+  - {fileID: 11400000, guid: 025d7b1940717a14e96e248287a9eca8, type: 2}
   - {fileID: 11400000, guid: 6d7651e66f551fc4099c70be5587e0b4, type: 2}
   m_BuildSettings:
     m_CompileScriptsInVirtualMode: 0
@@ -96,6 +100,7 @@ MonoBehaviour:
     - Face
     - Equipment
     - Weapons
+    - Body
   m_SchemaTemplates: []
   m_GroupTemplateObjects:
   - {fileID: 11400000, guid: d60d40806900bfa4c8e600d3783da4e9, type: 2}

@@ -10,16 +10,16 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: bbb281ee3bf0b054c82ac2347e9e782c, type: 3}
-  m_Name: FFXIV-Face
+  m_Name: FFXIV-Weapons1
   m_EditorClassIdentifier: 
-  m_GroupName: FFXIV-Face
+  m_GroupName: FFXIV-Weapons1
   m_Data:
     m_SerializedData: []
-  m_GUID: cda7592db08e28d4785f96376f9f8341
+  m_GUID: 76af385c67b4fbd429b1d7d4f5ad60fa
   m_SerializeEntries: []
   m_ReadOnly: 0
   m_Settings: {fileID: 11400000, guid: cf0831aa329fd6c44aae853afe962d54, type: 2}
   m_SchemaSet:
     m_Schemas:
-    - {fileID: 11400000, guid: 1c30d64f3b2c72a41ba14a64f0c49d43, type: 2}
-    - {fileID: 11400000, guid: f1731e998c0159f4697371f1f076133f, type: 2}
+    - {fileID: 11400000, guid: 0a770fc187c1d914fa835f93e756b1cd, type: 2}
+    - {fileID: 11400000, guid: d1317bddef26f884f888a234d900790b, type: 2}

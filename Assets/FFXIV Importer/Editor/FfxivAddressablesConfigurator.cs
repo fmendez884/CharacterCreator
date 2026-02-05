@@ -10,6 +10,8 @@ public static class FfxivAddressablesConfigurator
 {
     private const string ProcessedRoot = "Assets/FFXIV_Processed";
     private static readonly string[] CategoryFolders = { "Hair", "Face", "Equipment", "Weapons" };
+    private const string BodyLabel = "Body";
+    private const string EquipmentBaseToken = "e0000";
 
     [MenuItem("Tools/FFXIV/Addressables/Setup Groups (Processed Prefabs)")]
     public static void SetupGroups()
@@ -28,6 +30,7 @@ public static class FfxivAddressablesConfigurator
             var group = settings.FindGroup(groupName) ?? CreateGroup(settings, groupName);
             EnsureLabel(settings, category);
             EnsureLabel(settings, "FFXIV");
+            EnsureLabel(settings, BodyLabel);
             groupMap[category] = group;
         }
 
@@ -50,6 +53,11 @@ public static class FfxivAddressablesConfigurator
                 entry.address = System.IO.Path.GetFileNameWithoutExtension(path);
                 entry.SetLabel(category, true, true);
                 entry.SetLabel("FFXIV", true, true);
+                if (category.Equals("Equipment", StringComparison.OrdinalIgnoreCase) &&
+                    entry.address.IndexOf(EquipmentBaseToken, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    entry.SetLabel(BodyLabel, true, true);
+                }
                 moved++;
             }
         }

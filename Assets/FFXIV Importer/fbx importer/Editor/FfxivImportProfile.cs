@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -9,6 +10,9 @@ public class FfxivImportProfile : AssetPostprocessor
     private const string TargetRoot = "Assets/FFXIV_Imported/";
     private const string ImportProcessingKey = "FFXIV.ImportProcessingEnabled";
     private const bool ImportProcessingDefault = false;
+
+    private static readonly Dictionary<string, Material> PendingMaterials = new Dictionary<string, Material>();
+    private static bool PendingFlushScheduled = false;
 
     private static bool IsImportProcessingEnabled() =>
         EditorPrefs.GetBool(ImportProcessingKey, ImportProcessingDefault);
@@ -51,21 +55,24 @@ public class FfxivImportProfile : AssetPostprocessor
             EnsureFolder(materialsDir);
 
             string matPath = BuildMaterialPath(materialsDir, assetPath, incomingMat, renderer);
-            bool created;
-            var persistentMat = GetOrCreatePersistentMaterial(matPath, assetPath, incomingMat, out created);
-            if (persistentMat == null)
-                return incomingMat;
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+            if (existing != null)
+            {
+                bool isHairExisting = FfxivMaterialPolicy.IsHairAsset(assetPath, existing?.name, renderer?.name);
+                bool changedExisting = ApplyUrpLitAndForceOpaque(existing, isHairExisting);
+                if (changedExisting)
+                    EditorUtility.SetDirty(existing);
+                return existing;
+            }
 
             bool isHair = FfxivMaterialPolicy.IsHairAsset(assetPath, incomingMat?.name, renderer?.name);
-            bool changed = ApplyUrpLitAndForceOpaque(persistentMat, isHair);
+            ApplyUrpLitAndForceOpaque(incomingMat, isHair);
 
-            if (created)
-                changed = true;
+            var pendingMat = new Material(incomingMat) { name = incomingMat.name };
+            ApplyUrpLitAndForceOpaque(pendingMat, isHair);
+            QueueMaterialCreate(matPath, pendingMat);
 
-            if (changed)
-                EditorUtility.SetDirty(persistentMat);
-
-            return persistentMat;
+            return incomingMat;
         }
         catch (Exception ex)
         {
@@ -124,6 +131,53 @@ public class FfxivImportProfile : AssetPostprocessor
         }
 
         return changed;
+    }
+
+    private static void QueueMaterialCreate(string matPath, Material material)
+    {
+        if (string.IsNullOrEmpty(matPath) || material == null)
+            return;
+
+        if (!PendingMaterials.ContainsKey(matPath))
+            PendingMaterials.Add(matPath, material);
+
+        if (PendingFlushScheduled)
+            return;
+
+        PendingFlushScheduled = true;
+        EditorApplication.delayCall += FlushPendingMaterials;
+    }
+
+    private static void FlushPendingMaterials()
+    {
+        PendingFlushScheduled = false;
+
+        if (PendingMaterials.Count == 0)
+            return;
+
+        foreach (var kvp in PendingMaterials)
+        {
+            string matPath = kvp.Key;
+            Material material = kvp.Value;
+            if (material == null)
+                continue;
+
+            if (AssetDatabase.LoadAssetAtPath<Material>(matPath) != null)
+                continue;
+
+            try
+            {
+                AssetDatabase.CreateAsset(material, matPath);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[FFXIV] Deferred CreateAsset failed for '{matPath}': {ex.Message}");
+            }
+        }
+
+        PendingMaterials.Clear();
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
     }
 
 

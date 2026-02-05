@@ -30,6 +30,9 @@ public class CharacterCreatorEditor : Editor
     private SerializedProperty addressablesLabelFace;
     private SerializedProperty addressablesLoadTimeoutSeconds;
     private SerializedProperty logAddressables;
+    private SerializedProperty useAddressablesForBodies;
+    private SerializedProperty addressablesLabelBody;
+    private SerializedProperty bodyBaseToken;
 
     private void OnEnable()
     {
@@ -59,6 +62,9 @@ public class CharacterCreatorEditor : Editor
         addressablesLabelFace = serializedObject.FindProperty("addressablesLabelFace");
         addressablesLoadTimeoutSeconds = serializedObject.FindProperty("addressablesLoadTimeoutSeconds");
         logAddressables = serializedObject.FindProperty("logAddressables");
+        useAddressablesForBodies = serializedObject.FindProperty("useAddressablesForBodies");
+        addressablesLabelBody = serializedObject.FindProperty("addressablesLabelBody");
+        bodyBaseToken = serializedObject.FindProperty("bodyBaseToken");
     }
 
     public override void OnInspectorGUI()
@@ -125,6 +131,15 @@ public class CharacterCreatorEditor : Editor
                         creator.LoadAddressables();
                 }
             }
+        }
+
+        EditorGUILayout.Space(8);
+        EditorGUILayout.LabelField("Addressables (Body)", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(useAddressablesForBodies);
+        if (useAddressablesForBodies.boolValue)
+        {
+            EditorGUILayout.PropertyField(addressablesLabelBody);
+            EditorGUILayout.PropertyField(bodyBaseToken);
         }
 
         EditorGUILayout.HelpBox("Hair/face lists are auto-collected at runtime based on name tokens.", MessageType.Info);

@@ -31,6 +31,8 @@ public static class FfxivProcessedPrefabBuilder
     private static bool SkipUnchanged = true;
     private const string VerboseLoggingKey = "FFXIV.Processed.VerboseLogging";
     private const string SkipUnchangedKey = "FFXIV.Processed.SkipUnchanged";
+    private const string MaxFbxKey = "FFXIV.Processed.MaxFbx";
+    private const int DefaultMaxFbx = 0;
 
     [MenuItem("Tools/FFXIV/Processed Prefabs/Build from External Source...")]
     public static void BuildFromSourcePrompt()
@@ -80,7 +82,8 @@ public static class FfxivProcessedPrefabBuilder
     {
         VerboseLogging = EditorPrefs.GetBool(VerboseLoggingKey, false);
         SkipUnchanged = EditorPrefs.GetBool(SkipUnchangedKey, true);
-        sourceRoot = sourceRoot.Replace("\\", "/").TrimEnd('/');
+        int maxFbxToProcess = GetMaxFbxLimit();
+        sourceRoot = NormalizePath(sourceRoot);
 
         EnsureFolder(StagingRoot);
         EnsureFolder(ProcessedRoot);
@@ -93,11 +96,23 @@ public static class FfxivProcessedPrefabBuilder
 
         int totalSourceAssets = 0;
         int processedAssets = 0;
+        List<string> limitedSourceFiles = null;
+        HashSet<string> limitedFbxAssetPaths = null;
 
         try
         {
-            totalSourceAssets = CountSourceAssets(sourceRoot);
-            CopySourceToStaging(sourceRoot, totalSourceAssets, out List<string> importedAssetPaths, out List<string> importedFbxPaths, ref copiedAssets, ref copiedFbxs, ref processedAssets);
+            if (maxFbxToProcess > 0)
+            {
+                limitedSourceFiles = BuildLimitedSourceFileList(sourceRoot, maxFbxToProcess, out limitedFbxAssetPaths);
+                totalSourceAssets = limitedSourceFiles.Count;
+                Debug.Log($"[FFXIV] Max FBXs limit: {maxFbxToProcess}. Selected FBXs: {limitedFbxAssetPaths.Count}");
+            }
+            else
+            {
+                totalSourceAssets = CountSourceAssets(sourceRoot);
+            }
+
+            CopySourceToStaging(sourceRoot, totalSourceAssets, out List<string> importedAssetPaths, out List<string> importedFbxPaths, ref copiedAssets, ref copiedFbxs, ref processedAssets, limitedSourceFiles);
 
             AssetDatabase.StartAssetEditing();
             try
@@ -114,6 +129,13 @@ public static class FfxivProcessedPrefabBuilder
             AssetDatabase.Refresh();
 
             var fbxPaths = FindAllFbxInStaging();
+            if (maxFbxToProcess > 0)
+            {
+                if (limitedFbxAssetPaths != null && limitedFbxAssetPaths.Count > 0)
+                    fbxPaths = fbxPaths.Where(path => limitedFbxAssetPaths.Contains(path)).ToList();
+                else
+                    fbxPaths = new List<string>();
+            }
             int processed = 0;
             int skippedUnchanged = 0;
             int failed = 0;
@@ -181,10 +203,129 @@ public static class FfxivProcessedPrefabBuilder
         Debug.Log($"[FFXIV] Processed Prefabs skip unchanged: {(next ? "ON" : "OFF")}");
     }
 
+    [MenuItem("Tools/FFXIV/Processed Prefabs/Set Max FBXs/20")]
+    private static void SetMaxFbx20()
+    {
+        SetMaxFbxLimit(20);
+    }
+
+    [MenuItem("Tools/FFXIV/Processed Prefabs/Set Max FBXs/50")]
+    private static void SetMaxFbx50()
+    {
+        SetMaxFbxLimit(50);
+    }
+
+    [MenuItem("Tools/FFXIV/Processed Prefabs/Set Max FBXs/Unlimited")]
+    private static void SetMaxFbxUnlimited()
+    {
+        SetMaxFbxLimit(0);
+    }
+
+    [MenuItem("Tools/FFXIV/Processed Prefabs/Diagnostics/Log First 20 FBXs")]
+    private static void LogFirstFbxPaths()
+    {
+        string sourceRoot = EditorPrefs.GetString(SourceRootKey, DefaultSourceRoot);
+        if (string.IsNullOrEmpty(sourceRoot) || !Directory.Exists(sourceRoot))
+        {
+            EditorUtility.DisplayDialog("Source Root Missing", "Set a valid source root first.", "OK");
+            return;
+        }
+
+        sourceRoot = NormalizePath(sourceRoot);
+        const int max = 20;
+        int count = 0;
+
+        Debug.Log($"[FFXIV] FBX scan root: {sourceRoot}");
+
+        try
+        {
+            foreach (var file in EnumerateFilesSafe(sourceRoot, "*.fbx", SearchOption.AllDirectories))
+            {
+                Debug.Log($"[FFXIV] FBX {count + 1}: {file}");
+                count++;
+                if (count >= max)
+                    break;
+            }
+
+            Debug.Log($"[FFXIV] FBX scan finished. Found {count} (showing up to {max}).");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[FFXIV] FBX scan failed: {ex}");
+        }
+    }
+
+    private static int GetMaxFbxLimit()
+    {
+        return Mathf.Max(0, EditorPrefs.GetInt(MaxFbxKey, DefaultMaxFbx));
+    }
+
+    private static void SetMaxFbxLimit(int value)
+    {
+        int clamped = Mathf.Max(0, value);
+        EditorPrefs.SetInt(MaxFbxKey, clamped);
+        Debug.Log($"[FFXIV] Processed Prefabs max FBXs: {(clamped <= 0 ? "Unlimited" : clamped.ToString())}");
+    }
+
+    private static List<string> BuildLimitedSourceFileList(string sourceRoot, int maxFbx, out HashSet<string> limitedFbxAssetPaths)
+    {
+        limitedFbxAssetPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var selectedFbxAbs = new List<string>();
+        var textureRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var fileRaw in EnumerateFilesSafe(sourceRoot, "*.fbx", SearchOption.AllDirectories))
+        {
+            string fbxAbs = NormalizePath(fileRaw);
+            if (!fbxAbs.StartsWith(sourceRoot, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            selectedFbxAbs.Add(fbxAbs);
+
+                string rel = NormalizeSourceRelativePath(fbxAbs, sourceRoot);
+                if (!string.IsNullOrEmpty(rel))
+                    limitedFbxAssetPaths.Add($"{StagingRoot}/{rel}".Replace("\\", "/"));
+
+            string textureRoot = GetTextureRootForFbx(fileRaw);
+            if (!string.IsNullOrEmpty(textureRoot))
+                textureRoots.Add(textureRoot);
+
+            if (selectedFbxAbs.Count >= maxFbx)
+                break;
+        }
+
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var fbx in selectedFbxAbs)
+            files.Add(fbx);
+
+        foreach (var root in textureRoots)
+        {
+            foreach (var fileRaw in EnumerateFilesSafe(root, "*.*", SearchOption.AllDirectories))
+            {
+                string src = NormalizePath(fileRaw);
+                string ext = Path.GetExtension(src).ToLowerInvariant();
+                if (TextureExtensions.Contains(ext))
+                    files.Add(src);
+            }
+        }
+
+        return files.ToList();
+    }
+
+    private static string GetTextureRootForFbx(string fbxPath)
+    {
+        string dir = Path.GetDirectoryName(fbxPath);
+        if (string.IsNullOrEmpty(dir))
+            return string.Empty;
+
+        var parent = Directory.GetParent(dir);
+        string root = parent?.FullName ?? dir;
+        return root.Replace("\\", "/").TrimEnd('/');
+    }
+
     private static int CountSourceAssets(string sourceRoot)
     {
         int total = 0;
-        foreach (var fileRaw in Directory.EnumerateFiles(sourceRoot, "*.*", SearchOption.AllDirectories))
+        foreach (var fileRaw in EnumerateFilesSafe(sourceRoot, "*.*", SearchOption.AllDirectories))
         {
             string ext = Path.GetExtension(fileRaw).ToLowerInvariant();
             if (ext == ".fbx" || TextureExtensions.Contains(ext))
@@ -194,7 +335,7 @@ public static class FfxivProcessedPrefabBuilder
         return total;
     }
 
-    private static void CopySourceToStaging(string sourceRoot, int totalSourceAssets, out List<string> importedAssetPaths, out List<string> importedFbxPaths, ref int copiedAssets, ref int copiedFbxs, ref int processedAssets)
+    private static void CopySourceToStaging(string sourceRoot, int totalSourceAssets, out List<string> importedAssetPaths, out List<string> importedFbxPaths, ref int copiedAssets, ref int copiedFbxs, ref int processedAssets, IReadOnlyList<string> sourceFiles = null)
     {
         importedAssetPaths = new List<string>();
         importedFbxPaths = new List<string>();
@@ -206,9 +347,10 @@ public static class FfxivProcessedPrefabBuilder
         AssetDatabase.DisallowAutoRefresh();
         try
         {
-            foreach (var fileRaw in Directory.EnumerateFiles(sourceRoot, "*.*", SearchOption.AllDirectories))
+            IEnumerable<string> files = sourceFiles ?? EnumerateFilesSafe(sourceRoot, "*.*", SearchOption.AllDirectories);
+            foreach (var fileRaw in files)
             {
-                string src = fileRaw.Replace("\\", "/");
+                string src = NormalizePath(fileRaw);
                 string ext = Path.GetExtension(src).ToLowerInvariant();
 
                 bool isFbx = ext == ".fbx";
@@ -224,19 +366,21 @@ public static class FfxivProcessedPrefabBuilder
                 string scanEta = EstimateEta(scanStart, processedAssets, totalSourceAssets);
                 EditorUtility.DisplayProgressBar("FFXIV Processed Prefabs", $"Scanning source {processedAssets}/{totalSourceAssets} {scanEta}", totalSourceAssets == 0 ? 1f : processedAssets / (float)totalSourceAssets);
 
-                string rel = src.Substring(sourceRoot.Length).TrimStart('/');
+                string rel = NormalizeSourceRelativePath(src, sourceRoot);
+                if (string.IsNullOrEmpty(rel))
+                    continue;
                 string dstAbs = $"{stagingAbs}/{rel}";
                 string dstAssetPath = $"{StagingRoot}/{rel}".Replace("\\", "/");
 
                 EnsureFolderAbsolute(Path.GetDirectoryName(dstAbs).Replace("\\", "/"), assetsAbs);
 
-                bool needsCopy = !File.Exists(dstAbs) || !IsSameFile(src, dstAbs);
+                bool needsCopy = !FileExistsLong(dstAbs) || !IsSameFile(src, dstAbs);
                 if (!needsCopy)
                     continue;
 
                 try
                 {
-                    File.Copy(src, dstAbs, overwrite: true);
+                    FileCopyLong(src, dstAbs, overwrite: true);
                     CopyTimestamp(src, dstAbs);
 
                     copiedAssets++;
@@ -491,8 +635,8 @@ public static class FfxivProcessedPrefabBuilder
 
     private static bool IsSameFile(string src, string dst)
     {
-        var srcInfo = new FileInfo(src);
-        var dstInfo = new FileInfo(dst);
+        var srcInfo = GetFileInfoLong(src);
+        var dstInfo = GetFileInfoLong(dst);
 
         if (!srcInfo.Exists || !dstInfo.Exists)
             return false;
@@ -505,8 +649,129 @@ public static class FfxivProcessedPrefabBuilder
 
     private static void CopyTimestamp(string src, string dst)
     {
-        DateTime srcTime = File.GetLastWriteTimeUtc(src);
-        File.SetLastWriteTimeUtc(dst, srcTime);
+        DateTime srcTime = GetLastWriteTimeUtcLong(src);
+        SetLastWriteTimeUtcLong(dst, srcTime);
+    }
+
+    private static IEnumerable<string> EnumerateFilesSafe(string root, string pattern, SearchOption searchOption)
+    {
+        string rootLong = ToLongPath(root);
+        IEnumerable<string> files;
+        try
+        {
+            files = Directory.EnumerateFiles(rootLong, pattern, searchOption);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[FFXIV] EnumerateFiles failed for '{root}': {ex}");
+            yield break;
+        }
+
+        foreach (var file in files)
+            yield return NormalizePath(FromLongPath(file));
+    }
+
+    private static bool FileExistsLong(string path)
+    {
+        return File.Exists(ToLongPath(path));
+    }
+
+    private static FileInfo GetFileInfoLong(string path)
+    {
+        return new FileInfo(ToLongPath(path));
+    }
+
+    private static void FileCopyLong(string src, string dst, bool overwrite)
+    {
+        File.Copy(ToLongPath(src), ToLongPath(dst), overwrite);
+    }
+
+    private static DateTime GetLastWriteTimeUtcLong(string path)
+    {
+        return File.GetLastWriteTimeUtc(ToLongPath(path));
+    }
+
+    private static void SetLastWriteTimeUtcLong(string path, DateTime time)
+    {
+        File.SetLastWriteTimeUtc(ToLongPath(path), time);
+    }
+
+    private static string NormalizePath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return string.Empty;
+
+        return path.Replace("\\", "/").TrimEnd('/');
+    }
+
+    private static string NormalizeSourceRelativePath(string absolutePath, string sourceRoot)
+    {
+        if (string.IsNullOrEmpty(absolutePath) || string.IsNullOrEmpty(sourceRoot))
+            return string.Empty;
+
+        string normalizedAbs = NormalizePath(absolutePath);
+        string normalizedRoot = NormalizePath(sourceRoot);
+
+        if (!normalizedAbs.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            return string.Empty;
+
+        string rel = normalizedAbs.Substring(normalizedRoot.Length).TrimStart('/');
+
+        const string marker = "/.meta/";
+        int metaIndex = rel.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (metaIndex >= 0)
+        {
+            rel = rel.Substring(metaIndex + marker.Length);
+        }
+
+        int duplicateIndex = rel.IndexOf("/chara/", StringComparison.OrdinalIgnoreCase);
+        if (duplicateIndex >= 0)
+        {
+            rel = rel.Substring(duplicateIndex + 1);
+        }
+
+        return rel.TrimStart('/');
+    }
+
+    private static string ToLongPath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return path;
+
+        string full;
+        try
+        {
+            full = Path.GetFullPath(path);
+        }
+        catch
+        {
+            full = path;
+        }
+
+        if (full.StartsWith(@"\\?\"))
+            return full;
+
+        if (full.StartsWith(@"\\"))
+            return @"\\?\UNC\" + full.Substring(2);
+
+        if (Path.IsPathRooted(full))
+            return @"\\?\" + full;
+
+        return full;
+    }
+
+    private static string FromLongPath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return path;
+
+        if (path.StartsWith(@"\\?\UNC\"))
+            return @"\\" + path.Substring(8);
+
+        if (path.StartsWith(@"\\?\"))
+            return path.Substring(4);
+
+        return path;
     }
 
     private static string SanitizeName(string name)
@@ -536,11 +801,11 @@ public static class FfxivProcessedPrefabBuilder
     {
         string fbxAbs = AssetPathToAbsolute(fbxAssetPath);
         string prefabAbs = AssetPathToAbsolute(prefabAssetPath);
-        if (!File.Exists(fbxAbs) || !File.Exists(prefabAbs))
+        if (!FileExistsLong(fbxAbs) || !FileExistsLong(prefabAbs))
             return false;
 
-        DateTime fbxTime = File.GetLastWriteTimeUtc(fbxAbs);
-        DateTime prefabTime = File.GetLastWriteTimeUtc(prefabAbs);
+        DateTime fbxTime = GetLastWriteTimeUtcLong(fbxAbs);
+        DateTime prefabTime = GetLastWriteTimeUtcLong(prefabAbs);
         return prefabTime >= fbxTime;
     }
 

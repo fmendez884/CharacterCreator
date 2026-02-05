@@ -26,7 +26,7 @@
    - Groups:
      - `FFXIV/Hair`, `FFXIV/Face`, `FFXIV/Equipment`, `FFXIV/Weapons`
    - Labels:
-     - `Hair`, `Face`, `Equipment`, `Weapons`, `FFXIV`
+     - `Hair`, `Face`, `Equipment`, `Weapons`, `FFXIV`, `Body`
    - Addressable key: prefab name (example: `c0201h0142_hir`)
 
 3) **Build**
@@ -34,15 +34,19 @@
    - For Addressables content builds, run the processed build and Addressables build.
 
 ## Runtime (Hybrid)
-- Base bodies still auto-collected from scene using `CharacterCreator.AutoCollectFromScene`.
+- Base bodies are loaded via Addressables using the `Body` label (equipment prefabs containing `e0000`).
 - Hair/face are loaded via Addressables using labels `Hair` and `Face`.
-- Filtering works against the Addressables key strings (same tokens as the original names).
+- If Addressables are disabled for a category, `CharacterCreator` falls back to scene lists for that category.
 
 ## Key Scheme
 - Addressables address = prefab file name (no category prefix).
 - Example key: `c0201h0142_hir`.
 - Tokens are already configured in `CharacterCreator`:
-  - Male: `c0101`, Female: `c0201`, Hair: `_hir`, Face: `_fac`.
+  - Male: `c0101`, Female: `c0201`, Hair: `_hir`, Face: `_fac`, Base: `e0000`.
+
+## Body Defaults
+- Base body pieces live in `Assets/FFXIV_Processed/Equipment` and are labeled `Body` when the prefab name contains `e0000`.
+- Defaults auto-load the full base set for male (`c0101e0000_*`) and female (`c0201e0000_*`) without UI controls.
 
 ## Notes
 - Addressables package is required. After adding `com.unity.addressables` to the manifest, install via Package Manager if Unity prompts you.
