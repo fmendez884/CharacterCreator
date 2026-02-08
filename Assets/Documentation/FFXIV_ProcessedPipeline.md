@@ -3,6 +3,7 @@
 ## Goals
 - Keep raw FBX/texture sources outside `Assets` to minimize import time.
 - Emit stable prefabs/materials into `Assets/FFXIV_Processed` for runtime loading.
+- Remove FBX assets after processing so the project runs without any `.fbx` files under `Assets`.
 - Use Addressables labels per category for fast, async loading.
 
 ## Source + Output
@@ -13,6 +14,7 @@
   - `<PrefabName>.prefab`
   - `Materials/` (materials + `Textures/` copied from staging)
   - `Meshes/` (baked meshes extracted from FBX)
+- After processing, staging can be cleaned (removes all `.fbx` files from the project) so only prefabs/materials/meshes remain in `Assets`.
 
 ## Editor Build Steps
 1) **Processed Prefabs build**
@@ -20,6 +22,10 @@
    - Copies FBX + textures from Source into staging.
    - Applies `FfxivImportProfile` and `FfxivMaterialPolicy`.
    - Bakes prefabs/materials/meshes into processed output.
+   - Optional (default **ON**):
+     - Auto Addressables setup (groups + labels).
+     - Auto Addressable Index build.
+     - Cleanup staging (removes `Assets/FFXIV_Imported` so the project has **no FBXs**).
 
 2) **Addressables grouping**
    - Menu: `Tools/FFXIV/Addressables/Setup Groups (Processed Prefabs)`
@@ -28,10 +34,12 @@
    - Labels:
      - `Hair`, `Face`, `Equipment`, `Weapons`, `FFXIV`, `Body`
    - Addressable key: prefab name (example: `c0201h0142_hir`)
+   - For automated builds, the processed prefabs step can run this without dialogs.
 
 3) **Build**
    - `FfxivProcessedBuildStep` runs before player builds if a Source root is set.
    - For Addressables content builds, run the processed build and Addressables build.
+   - To keep the project FBX-free, leave cleanup enabled (default) so staging is removed after the processed build.
 
 ## Runtime (Hybrid)
 - Base bodies are loaded via Addressables using the `Body` label (equipment prefabs containing `e0000`).

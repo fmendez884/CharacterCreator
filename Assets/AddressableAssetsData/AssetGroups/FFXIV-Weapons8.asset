@@ -1,0 +1,165 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bbb281ee3bf0b054c82ac2347e9e782c, type: 3}
+  m_Name: FFXIV-Weapons8
+  m_EditorClassIdentifier: 
+  m_GroupName: FFXIV-Weapons8
+  m_Data:
+    m_SerializedData: []
+  m_GUID: 26899138ae571b44986ec1659b172279
+  m_SerializeEntries:
+  - m_GUID: 0a347927428c5c04b9a3e3c7cc3e33ba
+    m_Address: w0101b0007
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 144bded43bca2644e98f7fa6a8a616fa
+    m_Address: w0101b0018
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 2571c33c8b7c8b5448011079301b455b
+    m_Address: w0101b0006
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 369fba333f7f87641a3c884a11b260bf
+    m_Address: w0101b0010
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 36c6ca3cc2c86cc4aba9c341d7d14e40
+    m_Address: w0101b0003
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 3ff316bdb57fe3e4c9c7d4122195b532
+    m_Address: w0101b0021
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 50d58c8693ab07c46b5bc612b995f239
+    m_Address: w0101b0019
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 6547300559bc8d640ab5fa61b8a416fe
+    m_Address: w0101b0015
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 69e3db1719e9f7343971b276902ba4a3
+    m_Address: w0101b0011
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 778cff7f7ad1c594594f4ceac3e20eb7
+    m_Address: w0101b0001
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 84d5a924d634a5a4ebd8a98f97a0d6ad
+    m_Address: w0101b0005
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 8b3176503841a754887c4421ead3fd75
+    m_Address: w0101b0012
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 9ed3acff1b0aa9e4ba6f6c5547d8c198
+    m_Address: w0101b0008
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 9f320c80be8f79f47834e4a7d8757cc7
+    m_Address: w0101b0004
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: a3e5956d58ed3bf4eac9a4f2ec7e2da1
+    m_Address: w0101b0013
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: ad24ea99c59d6ed4ba1b03b10cfa9881
+    m_Address: w0101b0017
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: ca2d0ca1854abf74c979a929b89787e7
+    m_Address: w0101b0009
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: d38a5270d5db74c4c95b9626d319fc2f
+    m_Address: w0101b0002
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: f39a52b841e14f241840609936515af4
+    m_Address: w0101b0020
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: f6a21b46a73764443bc39d2dee2ec963
+    m_Address: w0101b0014
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - FFXIV
+    - Weapons
+    FlaggedDuringContentUpdateRestriction: 0
+  m_ReadOnly: 0
+  m_Settings: {fileID: 11400000, guid: cf0831aa329fd6c44aae853afe962d54, type: 2}
+  m_SchemaSet:
+    m_Schemas:
+    - {fileID: 11400000, guid: 7500ed91262c82c48b9b8730a7f6a3ba, type: 2}
+    - {fileID: 11400000, guid: 3b2281c5c42a87b4e8837958f7cbed19, type: 2}

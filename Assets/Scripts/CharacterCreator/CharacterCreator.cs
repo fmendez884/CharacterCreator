@@ -45,6 +45,10 @@ public class CharacterCreator : MonoBehaviour
     [Header("Force Hide")]
     [SerializeField] private bool forceHideOppositeGenderObjects = true;
 
+    [Header("Prefab Catalog (Scene-Based)")]
+    [SerializeField] private FfxivPrefabCatalog prefabCatalog;
+    [SerializeField] private bool usePrefabCatalog = true;
+
     [Header("Male Options")]
     [SerializeField] private List<GameObject> maleHairs = new();
     [SerializeField] private List<GameObject> maleFaces = new();
@@ -63,6 +67,13 @@ public class CharacterCreator : MonoBehaviour
     [SerializeField] private int maleFaceIndex;
     [SerializeField] private int femaleHairIndex;
     [SerializeField] private int femaleFaceIndex;
+
+    [Header("Base Bodies")]
+    [SerializeField] private bool manageBaseBodies = true;
+
+    [Header("Hair Visibility")]
+    [SerializeField] private bool allowExternalHairVisibilityOverride = true;
+    [SerializeField] private bool hairVisibleOverride = true;
 
     [Header("Filters")]
     [SerializeField] private Category category = Category.Hair;
@@ -83,6 +94,10 @@ public class CharacterCreator : MonoBehaviour
     [SerializeField] private string addressablesLabelBody = "Body";
     [SerializeField] private string bodyBaseToken = "e0000";
 
+    [Header("Addressable Index")]
+    [SerializeField] private ScriptableObject addressableIndex;
+    [SerializeField] private bool useAddressableIndex = true;
+
     private readonly List<string> maleHairKeys = new();
     private readonly List<string> maleFaceKeys = new();
     private readonly List<string> femaleHairKeys = new();
@@ -93,6 +108,7 @@ public class CharacterCreator : MonoBehaviour
     private readonly HashSet<string> femaleBodyPendingKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<GameObject> hiddenMaleObjects = new();
     private readonly HashSet<GameObject> hiddenFemaleObjects = new();
+    private bool indexKeysLoaded;
 #if ENABLE_ADDRESSABLES
     private AsyncOperationHandle<IList<GameObject>> hairLoadHandle;
     private AsyncOperationHandle<IList<GameObject>> faceLoadHandle;
@@ -113,6 +129,9 @@ public class CharacterCreator : MonoBehaviour
     public string FilterText => filterText;
     public int CurrentHairIndex => GetHairIndex(gender);
     public int CurrentFaceIndex => GetFaceIndex(gender);
+    public Transform CharacterRoot => characterRoot != null ? characterRoot : ResolveCharacterRoot();
+    public bool ManageBaseBodies => manageBaseBodies;
+    public bool HairVisibleOverride => hairVisibleOverride;
 
     public int GetHairCount(Gender forGender) => GetOptionCount(Category.Hair, forGender);
     public int GetFaceCount(Gender forGender) => GetOptionCount(Category.Face, forGender);
@@ -145,10 +164,12 @@ public class CharacterCreator : MonoBehaviour
     {
         EnsureCharacterRoot();
 
-        if (autoCollectFromScene)
+        if (usePrefabCatalog)
+            ApplyPrefabCatalog();
+        else if (autoCollectFromScene)
             AutoCollectFromScene();
 
-        if (loadAddressablesOnAwake && (useAddressablesForHairFace || useAddressablesForBodies))
+        if (loadAddressablesOnAwake && (useAddressablesForHairFace || (useAddressablesForBodies && manageBaseBodies)))
             LoadAddressables();
 
         ApplySelection();
@@ -183,6 +204,34 @@ public class CharacterCreator : MonoBehaviour
     public void SetFilterText(string value)
     {
         filterText = value ?? string.Empty;
+        ApplySelection();
+    }
+
+    public void SetHairVisibilityOverride(bool visible)
+    {
+        if (!allowExternalHairVisibilityOverride)
+            return;
+
+        if (hairVisibleOverride == visible)
+            return;
+
+        hairVisibleOverride = visible;
+        ApplySelection();
+    }
+
+    public void SetManageBaseBodies(bool enabled)
+    {
+        if (manageBaseBodies == enabled)
+            return;
+
+        manageBaseBodies = enabled;
+        ApplySelection();
+    }
+
+    public void SetAddressableIndex(ScriptableObject index)
+    {
+        addressableIndex = index;
+        indexKeysLoaded = false;
         ApplySelection();
     }
 
@@ -253,13 +302,68 @@ public class CharacterCreator : MonoBehaviour
     [ContextMenu("Rebuild Options From Scene")]
     public void RebuildFromScene()
     {
-        AutoCollectFromScene();
+        if (usePrefabCatalog)
+            ApplyPrefabCatalog();
+        else
+            AutoCollectFromScene();
         ApplySelection();
+    }
+
+    private void ApplyPrefabCatalog()
+    {
+        if (!usePrefabCatalog)
+            return;
+
+        if (prefabCatalog == null)
+            prefabCatalog = Resources.Load<FfxivPrefabCatalog>("FfxivPrefabCatalog");
+        if (prefabCatalog == null)
+            return;
+
+        maleHairs.Clear();
+        maleFaces.Clear();
+        femaleHairs.Clear();
+        femaleFaces.Clear();
+        maleBases.Clear();
+        femaleBases.Clear();
+
+        AddRange(maleHairs, prefabCatalog.maleHair);
+        AddRange(femaleHairs, prefabCatalog.femaleHair);
+        AddRange(maleFaces, prefabCatalog.maleFace);
+        AddRange(femaleFaces, prefabCatalog.femaleFace);
+        AddRange(maleBases, prefabCatalog.maleBaseBodies);
+        AddRange(femaleBases, prefabCatalog.femaleBaseBodies);
+
+        SortByName(maleHairs);
+        SortByName(femaleHairs);
+        SortByName(maleFaces);
+        SortByName(femaleFaces);
+        SortByName(maleBases);
+        SortByName(femaleBases);
+    }
+
+    private static void AddRange(List<GameObject> target, List<GameObject> source)
+    {
+        if (target == null || source == null)
+            return;
+
+        for (int i = 0; i < source.Count; i++)
+        {
+            var item = source[i];
+            if (item != null && !target.Contains(item))
+                target.Add(item);
+        }
     }
 
     [ContextMenu("Load Addressables (Hair/Face/Body)")]
     public void LoadAddressables()
     {
+        if (UseAddressableIndex())
+        {
+            ApplyIndexKeys();
+            ApplySelection();
+            return;
+        }
+
         if (!useAddressablesForHairFace && !useAddressablesForBodies)
             return;
 
@@ -293,7 +397,7 @@ public class CharacterCreator : MonoBehaviour
             };
         }
 
-        if (useAddressablesForBodies && !string.IsNullOrWhiteSpace(addressablesLabelBody))
+        if (manageBaseBodies && useAddressablesForBodies && !string.IsNullOrWhiteSpace(addressablesLabelBody))
         {
             bodyLoadHandle = Addressables.LoadAssetsAsync<GameObject>(addressablesLabelBody, null);
             bodyHandleValid = true;
@@ -322,21 +426,35 @@ public class CharacterCreator : MonoBehaviour
 
         ForceHideOppositeGenderObjects();
 
-        if (useAddressablesForBodies)
+        if (manageBaseBodies)
         {
-            ApplyAddressableBodies();
-            ApplyGroup(maleBases, false);
-            ApplyGroup(femaleBases, false);
-        }
-        else
-        {
-            ApplyGroup(maleBases, gender == Gender.Male);
-            ApplyGroup(femaleBases, gender == Gender.Female);
+            if (useAddressablesForBodies)
+            {
+                ApplyAddressableBodies();
+                if (!usePrefabCatalog)
+                {
+                    ApplyGroup(maleBases, false);
+                    ApplyGroup(femaleBases, false);
+                }
+            }
+            else if (usePrefabCatalog)
+            {
+                ApplyCatalogBodies();
+            }
+            else
+            {
+                ApplyGroup(maleBases, gender == Gender.Male);
+                ApplyGroup(femaleBases, gender == Gender.Female);
+            }
         }
 
         if (useAddressablesForHairFace)
         {
             ApplyAddressableSelection();
+        }
+        else if (usePrefabCatalog)
+        {
+            InstantiateCatalogSelection();
         }
         else
         {
@@ -346,13 +464,216 @@ public class CharacterCreator : MonoBehaviour
             ApplyList(femaleFaces, gender == Gender.Female ? femaleFaceIndex : -1);
         }
 
-        if (!useAddressablesForBodies)
+        if (manageBaseBodies && !useAddressablesForBodies && !usePrefabCatalog)
         {
             SetInstanceActive(maleBodyInstances, false);
             SetInstanceActive(femaleBodyInstances, false);
         }
 
+        ApplyHairVisibilityOverride();
+
         Changed?.Invoke();
+    }
+
+    private void InstantiateCatalogSelection()
+    {
+        if (!usePrefabCatalog)
+            return;
+
+        string hairKey = GetCurrentHairName();
+        string faceKey = GetCurrentFaceName();
+
+        if (gender == Gender.Male)
+        {
+            SwapCatalogInstance(maleHairInstance, instance => maleHairInstance = instance, hairKey);
+            SwapCatalogInstance(maleFaceInstance, instance => maleFaceInstance = instance, faceKey);
+
+            SetInstanceActive(femaleHairInstance, false);
+            SetInstanceActive(femaleFaceInstance, false);
+        }
+        else
+        {
+            SwapCatalogInstance(femaleHairInstance, instance => femaleHairInstance = instance, hairKey);
+            SwapCatalogInstance(femaleFaceInstance, instance => femaleFaceInstance = instance, faceKey);
+
+            SetInstanceActive(maleHairInstance, false);
+            SetInstanceActive(maleFaceInstance, false);
+        }
+    }
+
+    private void SwapCatalogInstance(GameObject currentInstance, Action<GameObject> assignInstance, string prefabName)
+    {
+        if (string.IsNullOrEmpty(prefabName))
+        {
+            if (currentInstance != null)
+                currentInstance.SetActive(false);
+            return;
+        }
+
+        if (currentInstance != null && string.Equals(currentInstance.name, prefabName, StringComparison.OrdinalIgnoreCase))
+        {
+            currentInstance.SetActive(true);
+            return;
+        }
+
+        if (currentInstance != null)
+        {
+            UnityEngine.Object.Destroy(currentInstance);
+            assignInstance?.Invoke(null);
+        }
+
+        var prefab = FindPrefabByName(prefabName);
+        if (prefab == null)
+            return;
+
+        var instance = UnityEngine.Object.Instantiate(prefab, characterRoot != null ? characterRoot : transform);
+        instance.name = prefabName;
+        assignInstance?.Invoke(instance);
+    }
+
+    private GameObject FindPrefabByName(string prefabName)
+    {
+        if (string.IsNullOrEmpty(prefabName))
+            return null;
+
+        var list = gender == Gender.Male ? GetHairList(Gender.Male) : GetHairList(Gender.Female);
+        for (int i = 0; i < list.Count; i++)
+        {
+            var prefab = list[i];
+            if (prefab != null && string.Equals(prefab.name, prefabName, StringComparison.OrdinalIgnoreCase))
+                return prefab;
+        }
+
+        list = gender == Gender.Male ? GetFaceList(Gender.Male) : GetFaceList(Gender.Female);
+        for (int i = 0; i < list.Count; i++)
+        {
+            var prefab = list[i];
+            if (prefab != null && string.Equals(prefab.name, prefabName, StringComparison.OrdinalIgnoreCase))
+                return prefab;
+        }
+
+        return null;
+    }
+
+    private void ApplyCatalogBodies()
+    {
+        if (!usePrefabCatalog)
+            return;
+
+        if (gender == Gender.Male)
+        {
+            EnsureCatalogBodyInstances(Gender.Male);
+            SetInstanceActive(maleBodyInstances, true);
+            ReleaseCatalogBodyInstances(femaleBodyInstances, femaleBodyPendingKeys);
+        }
+        else
+        {
+            EnsureCatalogBodyInstances(Gender.Female);
+            SetInstanceActive(femaleBodyInstances, true);
+            ReleaseCatalogBodyInstances(maleBodyInstances, maleBodyPendingKeys);
+        }
+    }
+
+    private void EnsureCatalogBodyInstances(Gender forGender)
+    {
+        EnsureCharacterRoot();
+
+        var prefabs = forGender == Gender.Male ? maleBases : femaleBases;
+        var instances = forGender == Gender.Male ? maleBodyInstances : femaleBodyInstances;
+        var pending = forGender == Gender.Male ? maleBodyPendingKeys : femaleBodyPendingKeys;
+
+        if (prefabs.Count == 0)
+        {
+            if (logAddressables)
+                Debug.LogWarning($"[CharacterCreator] No base body prefabs found for {forGender}.", this);
+            return;
+        }
+
+        ReleaseCatalogBodyInstancesNotInPrefabs(instances, pending, prefabs);
+
+        for (int i = 0; i < prefabs.Count; i++)
+        {
+            var prefab = prefabs[i];
+            if (prefab == null)
+                continue;
+
+            string key = prefab.name;
+            if (HasBodyInstance(instances, key) || pending.Contains(key))
+                continue;
+
+            pending.Add(key);
+
+            var instance = UnityEngine.Object.Instantiate(prefab, characterRoot != null ? characterRoot : transform);
+            instance.name = key;
+            instances.Add(instance);
+            SetInstanceActive(instance, gender == forGender);
+            pending.Remove(key);
+        }
+    }
+
+    private static void ReleaseCatalogBodyInstancesNotInPrefabs(List<GameObject> instances, HashSet<string> pending, List<GameObject> prefabs)
+    {
+        if (instances == null)
+            return;
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < prefabs.Count; i++)
+        {
+            var prefab = prefabs[i];
+            if (prefab != null)
+                names.Add(prefab.name);
+        }
+
+        for (int i = instances.Count - 1; i >= 0; i--)
+        {
+            var instance = instances[i];
+            if (instance == null || !names.Contains(instance.name))
+            {
+                if (instance != null)
+                    UnityEngine.Object.Destroy(instance);
+                instances.RemoveAt(i);
+            }
+        }
+
+        pending?.RemoveWhere(key => !names.Contains(key));
+    }
+
+    private static void ReleaseCatalogBodyInstances(List<GameObject> instances, HashSet<string> pending)
+    {
+        if (instances == null)
+            return;
+
+        for (int i = instances.Count - 1; i >= 0; i--)
+        {
+            var instance = instances[i];
+            if (instance != null)
+                UnityEngine.Object.Destroy(instance);
+            instances.RemoveAt(i);
+        }
+
+        pending?.Clear();
+    }
+
+    private void ApplyHairVisibilityOverride()
+    {
+        if (!allowExternalHairVisibilityOverride)
+            return;
+
+        bool show = hairVisibleOverride;
+        if (gender == Gender.Male)
+        {
+            if (maleHairInstance != null)
+                maleHairInstance.SetActive(show);
+            if (!useAddressablesForHairFace && !usePrefabCatalog)
+                ApplyList(maleHairs, show ? maleHairIndex : -1);
+        }
+        else
+        {
+            if (femaleHairInstance != null)
+                femaleHairInstance.SetActive(show);
+            if (!useAddressablesForHairFace && !usePrefabCatalog)
+                ApplyList(femaleHairs, show ? femaleHairIndex : -1);
+        }
     }
 
     private void ForceHideOppositeGenderObjects()
@@ -568,6 +889,12 @@ public class CharacterCreator : MonoBehaviour
     private bool TryEnsureAddressableKeys()
     {
 #if ENABLE_ADDRESSABLES
+        if (UseAddressableIndex())
+        {
+            ApplyIndexKeys();
+            return true;
+        }
+
         if (!hairHandleValid && !faceHandleValid)
         {
             if (logAddressables)
@@ -583,6 +910,12 @@ public class CharacterCreator : MonoBehaviour
 
         return true;
 #else
+        if (UseAddressableIndex())
+        {
+            ApplyIndexKeys();
+            return true;
+        }
+
         return false;
 #endif
     }
@@ -590,6 +923,12 @@ public class CharacterCreator : MonoBehaviour
     private bool TryEnsureBodyAddressableKeys()
     {
 #if ENABLE_ADDRESSABLES
+        if (UseAddressableIndex())
+        {
+            ApplyIndexKeys();
+            return true;
+        }
+
         if (!bodyHandleValid)
         {
             if (logAddressables)
@@ -602,8 +941,71 @@ public class CharacterCreator : MonoBehaviour
 
         return true;
 #else
+        if (UseAddressableIndex())
+        {
+            ApplyIndexKeys();
+            return true;
+        }
+
         return false;
 #endif
+    }
+
+    private bool UseAddressableIndex()
+    {
+        return useAddressableIndex && addressableIndex != null;
+    }
+
+    private void ApplyIndexKeys()
+    {
+        if (indexKeysLoaded)
+            return;
+
+        var index = addressableIndex as ScriptableObject;
+        if (index == null)
+            return;
+
+        maleHairKeys.Clear();
+        femaleHairKeys.Clear();
+        maleFaceKeys.Clear();
+        femaleFaceKeys.Clear();
+        maleBodyKeys.Clear();
+        femaleBodyKeys.Clear();
+
+        if (!TryCopyIndexList(index, "maleHair", maleHairKeys)) return;
+        if (!TryCopyIndexList(index, "femaleHair", femaleHairKeys)) return;
+        if (!TryCopyIndexList(index, "maleFace", maleFaceKeys)) return;
+        if (!TryCopyIndexList(index, "femaleFace", femaleFaceKeys)) return;
+        if (!TryCopyIndexList(index, "maleBaseBodies", maleBodyKeys)) return;
+        if (!TryCopyIndexList(index, "femaleBaseBodies", femaleBodyKeys)) return;
+
+        SortByName(maleHairKeys);
+        SortByName(femaleHairKeys);
+        SortByName(maleFaceKeys);
+        SortByName(femaleFaceKeys);
+        SortByName(maleBodyKeys);
+        SortByName(femaleBodyKeys);
+
+        indexKeysLoaded = true;
+    }
+
+    private bool TryCopyIndexList(ScriptableObject index, string fieldName, List<string> target)
+    {
+        if (index == null || target == null)
+            return false;
+
+        var field = index.GetType().GetField(fieldName);
+        if (field == null)
+            return false;
+
+        if (field.GetValue(index) is List<string> source)
+        {
+            target.Clear();
+            target.AddRange(source);
+            return true;
+        }
+
+        return false;
     }
 
     private void UpdateAddressableKeys(IList<GameObject> assets, Category category)
@@ -807,6 +1209,21 @@ public class CharacterCreator : MonoBehaviour
             Addressables.Release(bodyLoadHandle);
 
 #endif
+
+        if (usePrefabCatalog)
+        {
+            if (maleHairInstance != null)
+                UnityEngine.Object.Destroy(maleHairInstance);
+            if (maleFaceInstance != null)
+                UnityEngine.Object.Destroy(maleFaceInstance);
+            if (femaleHairInstance != null)
+                UnityEngine.Object.Destroy(femaleHairInstance);
+            if (femaleFaceInstance != null)
+                UnityEngine.Object.Destroy(femaleFaceInstance);
+
+            ReleaseCatalogBodyInstances(maleBodyInstances, maleBodyPendingKeys);
+            ReleaseCatalogBodyInstances(femaleBodyInstances, femaleBodyPendingKeys);
+        }
 
 #if ENABLE_ADDRESSABLES
         hairHandleValid = false;

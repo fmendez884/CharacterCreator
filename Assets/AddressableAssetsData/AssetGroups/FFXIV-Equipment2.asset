@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bbb281ee3bf0b054c82ac2347e9e782c, type: 3}
+  m_Name: FFXIV-Equipment2
+  m_EditorClassIdentifier: 
+  m_GroupName: FFXIV-Equipment2
+  m_Data:
+    m_SerializedData: []
+  m_GUID: a3cc8b85184cda14da6235ed1b06c6ef
+  m_SerializeEntries: []
+  m_ReadOnly: 0
+  m_Settings: {fileID: 11400000, guid: cf0831aa329fd6c44aae853afe962d54, type: 2}
+  m_SchemaSet:
+    m_Schemas:
+    - {fileID: 11400000, guid: 5d4b0d45a3b332f4c8b47cb71b265940, type: 2}
+    - {fileID: 11400000, guid: a313f8d2ac492554cac90eead82ee19b, type: 2}

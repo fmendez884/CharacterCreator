@@ -12,6 +12,9 @@ public static class FfxivProcessedPrefabBuilder
     private const string StagingRoot = "Assets/FFXIV_Imported";
     private const string ProcessedRoot = "Assets/FFXIV_Processed";
     private const string ImportProcessingKey = "FFXIV.ImportProcessingEnabled";
+    private const string AutoSetupAddressablesKey = "FFXIV.Processed.AutoSetupAddressables";
+    private const string AutoBuildAddressableIndexKey = "FFXIV.Processed.AutoBuildAddressableIndex";
+    private const string CleanupStagingKey = "FFXIV.Processed.CleanupStaging";
 
     private static readonly string[] TextureExtensions =
     {
@@ -33,6 +36,9 @@ public static class FfxivProcessedPrefabBuilder
     private const string SkipUnchangedKey = "FFXIV.Processed.SkipUnchanged";
     private const string MaxFbxKey = "FFXIV.Processed.MaxFbx";
     private const int DefaultMaxFbx = 0;
+    private const bool DefaultAutoSetupAddressables = true;
+    private const bool DefaultAutoBuildAddressableIndex = true;
+    private const bool DefaultCleanupStaging = true;
 
     [MenuItem("Tools/FFXIV/Processed Prefabs/Build from External Source...")]
     public static void BuildFromSourcePrompt()
@@ -83,6 +89,11 @@ public static class FfxivProcessedPrefabBuilder
         VerboseLogging = EditorPrefs.GetBool(VerboseLoggingKey, false);
         SkipUnchanged = EditorPrefs.GetBool(SkipUnchangedKey, true);
         int maxFbxToProcess = GetMaxFbxLimit();
+        bool autoSetupAddressables = EditorPrefs.GetBool(AutoSetupAddressablesKey, DefaultAutoSetupAddressables);
+        bool autoBuildAddressableIndex = EditorPrefs.GetBool(AutoBuildAddressableIndexKey, DefaultAutoBuildAddressableIndex);
+        if (autoSetupAddressables)
+            autoBuildAddressableIndex = true;
+        bool cleanupStaging = EditorPrefs.GetBool(CleanupStagingKey, DefaultCleanupStaging);
         sourceRoot = NormalizePath(sourceRoot);
 
         EnsureFolder(StagingRoot);
@@ -169,9 +180,29 @@ public static class FfxivProcessedPrefabBuilder
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
+            int movedAddressables = 0;
+            bool addressablesUpdated = false;
+            bool indexBuilt = false;
+            bool stagingCleaned = false;
+
+            if (autoSetupAddressables)
+            {
+                movedAddressables = FfxivAddressablesConfigurator.SetupGroups(showDialog: false);
+                addressablesUpdated = true;
+            }
+
+            if (autoBuildAddressableIndex)
+                indexBuilt = FfxivAddressableIndexBuilder.BuildIndex(showDialog: false);
+
+            if (cleanupStaging)
+                stagingCleaned = CleanupStaging();
+
             EditorUtility.DisplayDialog(
                 "FFXIV Processed Prefabs",
-                $"Copied assets: {copiedAssets}\nCopied FBXs: {copiedFbxs}\nProcessed FBXs: {processed}\nSkipped unchanged: {skippedUnchanged}\nFailed: {failed}\n\nOutput: {ProcessedRoot}",
+                $"Copied assets: {copiedAssets}\nCopied FBXs: {copiedFbxs}\nProcessed FBXs: {processed}\nSkipped unchanged: {skippedUnchanged}\nFailed: {failed}\n\nAddressables updated: {(addressablesUpdated ? movedAddressables.ToString() : "No")}" +
+                $"\nAddressable index: {(autoBuildAddressableIndex ? (indexBuilt ? "Built" : "Failed") : "No")}" +
+                $"\nStaging cleanup: {(cleanupStaging ? (stagingCleaned ? "Removed" : "Skipped") : "No")}" +
+                $"\n\nOutput: {ProcessedRoot}",
                 "OK"
             );
 
@@ -201,6 +232,31 @@ public static class FfxivProcessedPrefabBuilder
         bool next = !current;
         EditorPrefs.SetBool(SkipUnchangedKey, next);
         Debug.Log($"[FFXIV] Processed Prefabs skip unchanged: {(next ? "ON" : "OFF")}");
+    }
+
+    [MenuItem("Tools/FFXIV/Processed Prefabs/Toggle Auto Addressables Setup")]
+    private static void ToggleAutoAddressablesSetup()
+    {
+        ToggleBoolPreference(AutoSetupAddressablesKey, DefaultAutoSetupAddressables, "auto setup addressables");
+    }
+
+    [MenuItem("Tools/FFXIV/Processed Prefabs/Toggle Auto Addressable Index Build")]
+    private static void ToggleAutoAddressableIndexBuild()
+    {
+        ToggleBoolPreference(AutoBuildAddressableIndexKey, DefaultAutoBuildAddressableIndex, "auto build addressable index");
+    }
+
+    [MenuItem("Tools/FFXIV/Processed Prefabs/Toggle Cleanup Staging (Remove FBX)")]
+    private static void ToggleCleanupStaging()
+    {
+        ToggleBoolPreference(CleanupStagingKey, DefaultCleanupStaging, "cleanup staging (remove FBX)");
+    }
+
+    [MenuItem("Tools/FFXIV/Processed Prefabs/Cleanup Staging Now")]
+    private static void CleanupStagingNow()
+    {
+        bool removed = CleanupStaging();
+        Debug.Log($"[FFXIV] Processed Prefabs staging cleanup: {(removed ? "REMOVED" : "SKIPPED")}");
     }
 
     [MenuItem("Tools/FFXIV/Processed Prefabs/Set Max FBXs/20")]
@@ -260,11 +316,31 @@ public static class FfxivProcessedPrefabBuilder
         return Mathf.Max(0, EditorPrefs.GetInt(MaxFbxKey, DefaultMaxFbx));
     }
 
+    private static void ToggleBoolPreference(string key, bool defaultValue, string label)
+    {
+        bool current = EditorPrefs.GetBool(key, defaultValue);
+        bool next = !current;
+        EditorPrefs.SetBool(key, next);
+        Debug.Log($"[FFXIV] Processed Prefabs {label}: {(next ? "ON" : "OFF")}");
+    }
+
     private static void SetMaxFbxLimit(int value)
     {
         int clamped = Mathf.Max(0, value);
         EditorPrefs.SetInt(MaxFbxKey, clamped);
         Debug.Log($"[FFXIV] Processed Prefabs max FBXs: {(clamped <= 0 ? "Unlimited" : clamped.ToString())}");
+    }
+
+    private static bool CleanupStaging()
+    {
+        if (!AssetDatabase.IsValidFolder(StagingRoot))
+            return false;
+
+        bool removed = AssetDatabase.DeleteAsset(StagingRoot);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
+
+        return removed;
     }
 
     private static List<string> BuildLimitedSourceFileList(string sourceRoot, int maxFbx, out HashSet<string> limitedFbxAssetPaths)

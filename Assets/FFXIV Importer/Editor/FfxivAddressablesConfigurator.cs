@@ -16,11 +16,16 @@ public static class FfxivAddressablesConfigurator
     [MenuItem("Tools/FFXIV/Addressables/Setup Groups (Processed Prefabs)")]
     public static void SetupGroups()
     {
+        SetupGroups(showDialog: true);
+    }
+
+    public static int SetupGroups(bool showDialog)
+    {
         var settings = AddressableAssetSettingsDefaultObject.Settings;
         if (settings == null)
         {
             Debug.LogError("[FFXIV] Addressables settings not found. Create Addressables settings first (Window > Asset Management > Addressables > Groups).");
-            return;
+            return 0;
         }
 
         var groupMap = new Dictionary<string, AddressableAssetGroup>();
@@ -65,7 +70,9 @@ public static class FfxivAddressablesConfigurator
         settings.SetDirty(AddressableAssetSettings.ModificationEvent.BatchModification, null, true);
         AssetDatabase.SaveAssets();
 
-        EditorUtility.DisplayDialog("FFXIV Addressables", $"Groups updated. Prefab entries updated: {moved}", "OK");
+        if (showDialog)
+            EditorUtility.DisplayDialog("FFXIV Addressables", $"Groups updated. Prefab entries updated: {moved}", "OK");
+        return moved;
     }
 
     private static AddressableAssetGroup CreateGroup(AddressableAssetSettings settings, string name)

@@ -24,6 +24,9 @@ public class CharacterCreatorEditor : Editor
     private SerializedProperty maleFaceIndex;
     private SerializedProperty femaleHairIndex;
     private SerializedProperty femaleFaceIndex;
+    private SerializedProperty manageBaseBodies;
+    private SerializedProperty allowExternalHairVisibilityOverride;
+    private SerializedProperty hairVisibleOverride;
     private SerializedProperty useAddressablesForHairFace;
     private SerializedProperty loadAddressablesOnAwake;
     private SerializedProperty addressablesLabelHair;
@@ -33,6 +36,10 @@ public class CharacterCreatorEditor : Editor
     private SerializedProperty useAddressablesForBodies;
     private SerializedProperty addressablesLabelBody;
     private SerializedProperty bodyBaseToken;
+    private SerializedProperty addressableIndex;
+    private SerializedProperty useAddressableIndex;
+    private SerializedProperty prefabCatalog;
+    private SerializedProperty usePrefabCatalog;
 
     private void OnEnable()
     {
@@ -56,6 +63,9 @@ public class CharacterCreatorEditor : Editor
         maleFaceIndex = serializedObject.FindProperty("maleFaceIndex");
         femaleHairIndex = serializedObject.FindProperty("femaleHairIndex");
         femaleFaceIndex = serializedObject.FindProperty("femaleFaceIndex");
+        manageBaseBodies = serializedObject.FindProperty("manageBaseBodies");
+        allowExternalHairVisibilityOverride = serializedObject.FindProperty("allowExternalHairVisibilityOverride");
+        hairVisibleOverride = serializedObject.FindProperty("hairVisibleOverride");
         useAddressablesForHairFace = serializedObject.FindProperty("useAddressablesForHairFace");
         loadAddressablesOnAwake = serializedObject.FindProperty("loadAddressablesOnAwake");
         addressablesLabelHair = serializedObject.FindProperty("addressablesLabelHair");
@@ -65,6 +75,10 @@ public class CharacterCreatorEditor : Editor
         useAddressablesForBodies = serializedObject.FindProperty("useAddressablesForBodies");
         addressablesLabelBody = serializedObject.FindProperty("addressablesLabelBody");
         bodyBaseToken = serializedObject.FindProperty("bodyBaseToken");
+        addressableIndex = serializedObject.FindProperty("addressableIndex");
+        useAddressableIndex = serializedObject.FindProperty("useAddressableIndex");
+        prefabCatalog = serializedObject.FindProperty("prefabCatalog");
+        usePrefabCatalog = serializedObject.FindProperty("usePrefabCatalog");
     }
 
     public override void OnInspectorGUI()
@@ -79,6 +93,9 @@ public class CharacterCreatorEditor : Editor
 
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Auto Collect (Scene)", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(usePrefabCatalog);
+        if (usePrefabCatalog.boolValue)
+            EditorGUILayout.PropertyField(prefabCatalog);
         EditorGUILayout.PropertyField(autoCollectFromScene);
         if (autoCollectFromScene.boolValue)
         {
@@ -113,9 +130,21 @@ public class CharacterCreatorEditor : Editor
         EditorGUILayout.PropertyField(femaleFaceIndex);
 
         EditorGUILayout.Space(8);
+        EditorGUILayout.LabelField("Base Bodies", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(manageBaseBodies);
+
+        EditorGUILayout.Space(8);
+        EditorGUILayout.LabelField("Hair Visibility", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(allowExternalHairVisibilityOverride);
+        if (allowExternalHairVisibilityOverride.boolValue)
+            EditorGUILayout.PropertyField(hairVisibleOverride);
+
+        EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Addressables (Hair/Face)", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(useAddressableIndex);
+        EditorGUILayout.PropertyField(addressableIndex);
         EditorGUILayout.PropertyField(useAddressablesForHairFace);
-        if (useAddressablesForHairFace.boolValue)
+        if (useAddressablesForHairFace.boolValue && !useAddressableIndex.boolValue)
         {
             EditorGUILayout.PropertyField(loadAddressablesOnAwake);
             EditorGUILayout.PropertyField(addressablesLabelHair);
@@ -136,7 +165,7 @@ public class CharacterCreatorEditor : Editor
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Addressables (Body)", EditorStyles.boldLabel);
         EditorGUILayout.PropertyField(useAddressablesForBodies);
-        if (useAddressablesForBodies.boolValue)
+        if (useAddressablesForBodies.boolValue && manageBaseBodies.boolValue && !useAddressableIndex.boolValue)
         {
             EditorGUILayout.PropertyField(addressablesLabelBody);
             EditorGUILayout.PropertyField(bodyBaseToken);

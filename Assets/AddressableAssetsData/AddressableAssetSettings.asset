@@ -44,16 +44,44 @@ MonoBehaviour:
   m_BuildAddressablesWithPlayerBuild: 0
   m_overridePlayerVersion: '[UnityEditor.PlayerSettings.bundleVersion]'
   m_GroupAssets:
+  - {fileID: 11400000, guid: 2b4717e90e8bcb24ca42b1c727a07538, type: 2}
+  - {fileID: 11400000, guid: 37262e282d8d539479ce3b362680d9bc, type: 2}
   - {fileID: 11400000, guid: 479b0ddd962b13542bf50c6bd0cf48c8, type: 2}
+  - {fileID: 11400000, guid: 568fd38f9eb040c4a81f82b930a31dc6, type: 2}
+  - {fileID: 11400000, guid: 992f13bc395e3244f9624a70127cae27, type: 2}
   - {fileID: 11400000, guid: 7c54a4cb6027b044ba47a5b7651232eb, type: 2}
+  - {fileID: 11400000, guid: 3ff242320ebebdc4da36210a09fe1abf, type: 2}
   - {fileID: 11400000, guid: 1e3116764da00324798a5c0e42f759ce, type: 2}
+  - {fileID: 11400000, guid: 28758f292a8abd14e8dbf6f43741defa, type: 2}
   - {fileID: 11400000, guid: 9d1402083e0e0e3489c2437a2b1c8896, type: 2}
+  - {fileID: 11400000, guid: f24365e96a821c94fb845be2b424f63e, type: 2}
+  - {fileID: 11400000, guid: bddcf5124b90a6040b1302b2d912bb7b, type: 2}
   - {fileID: 11400000, guid: fec9cb1aa1079da4c860fd1829ad8330, type: 2}
+  - {fileID: 11400000, guid: 4e2a7a2ab8d5f4e4ea8b05b2e5a34505, type: 2}
+  - {fileID: 11400000, guid: efa4f13c1cbec4949967965b8e05bb82, type: 2}
+  - {fileID: 11400000, guid: 89797a9089e96fb419ed3e1436128795, type: 2}
+  - {fileID: 11400000, guid: 1290515790a52a94c851306e4de9f104, type: 2}
+  - {fileID: 11400000, guid: a16887d571f8d1b419684e506bf0b0cd, type: 2}
+  - {fileID: 11400000, guid: 1b749612dc5a90649949691b252bff7f, type: 2}
+  - {fileID: 11400000, guid: 38c062843d9f13c4cab80ea8f2637986, type: 2}
+  - {fileID: 11400000, guid: c4b57cd090f313347a62f7e92cfd605d, type: 2}
   - {fileID: 11400000, guid: 17225e6f46b44764c800b4853735eedb, type: 2}
+  - {fileID: 11400000, guid: d8331834d9452924a9a113abc083bd9d, type: 2}
+  - {fileID: 11400000, guid: dac2fc4b54472a748aa93f9ad5bff161, type: 2}
+  - {fileID: 11400000, guid: 30c88983397c4db4f900e082b1629873, type: 2}
   - {fileID: 11400000, guid: 98e008a70f85dc647abceee7a0997cab, type: 2}
+  - {fileID: 11400000, guid: 218b7b71811a0cb4b92b2d74f1a62a11, type: 2}
+  - {fileID: 11400000, guid: 8701b374fa665f74aad30f135833c318, type: 2}
   - {fileID: 11400000, guid: bf74b7a29c15eb04cb43750d0c25766c, type: 2}
+  - {fileID: 11400000, guid: 4f3d40264dd8adb49bcb94026573fb3d, type: 2}
   - {fileID: 11400000, guid: 025d7b1940717a14e96e248287a9eca8, type: 2}
+  - {fileID: 11400000, guid: 0ffb22a8e0daed24ab5bf8377c5d321e, type: 2}
+  - {fileID: 11400000, guid: 1c76a9b35041d3146a0e906312993630, type: 2}
   - {fileID: 11400000, guid: 6d7651e66f551fc4099c70be5587e0b4, type: 2}
+  - {fileID: 11400000, guid: 08903210ad021834cabffad945790d66, type: 2}
+  - {fileID: 11400000, guid: 3c3699dfd2a50044ca1b2dc4a0394ead, type: 2}
+  - {fileID: 11400000, guid: f66065685fc84d642990e2ac9cfa935a, type: 2}
+  - {fileID: 11400000, guid: 058a27256ccef7d4791fa9c14ab9f778, type: 2}
   m_BuildSettings:
     m_CompileScriptsInVirtualMode: 0
     m_CleanupStreamingAssetsAfterBuilds: 1
