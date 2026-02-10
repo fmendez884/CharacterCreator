@@ -13,6 +13,12 @@ public class EquipmentSystemEditor : Editor
     private SerializedProperty logAddressables;
     private SerializedProperty prefabCatalog;
     private SerializedProperty usePrefabCatalog;
+    private SerializedProperty cleanupSceneObjectsWhenNotUsingSceneLists;
+    private SerializedProperty logSceneCleanup;
+    private SerializedProperty runtimeCleanupPoll;
+    private SerializedProperty runtimeCleanupPollDurationSeconds;
+    private SerializedProperty runtimeCleanupPollIntervalSeconds;
+    private SerializedProperty activateNewInstances;
 
     private void OnEnable()
     {
@@ -26,6 +32,12 @@ public class EquipmentSystemEditor : Editor
         logAddressables = serializedObject.FindProperty("logAddressables");
         prefabCatalog = serializedObject.FindProperty("prefabCatalog");
         usePrefabCatalog = serializedObject.FindProperty("usePrefabCatalog");
+        cleanupSceneObjectsWhenNotUsingSceneLists = serializedObject.FindProperty("cleanupSceneObjectsWhenNotUsingSceneLists");
+        logSceneCleanup = serializedObject.FindProperty("logSceneCleanup");
+        runtimeCleanupPoll = serializedObject.FindProperty("runtimeCleanupPoll");
+        runtimeCleanupPollDurationSeconds = serializedObject.FindProperty("runtimeCleanupPollDurationSeconds");
+        runtimeCleanupPollIntervalSeconds = serializedObject.FindProperty("runtimeCleanupPollIntervalSeconds");
+        activateNewInstances = serializedObject.FindProperty("activateNewInstances");
     }
 
     public override void OnInspectorGUI()
@@ -43,6 +55,18 @@ public class EquipmentSystemEditor : Editor
         EditorGUILayout.PropertyField(usePrefabCatalog);
         if (usePrefabCatalog.boolValue)
             EditorGUILayout.PropertyField(prefabCatalog);
+
+        EditorGUILayout.Space(8);
+        EditorGUILayout.LabelField("Scene Cleanup", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(cleanupSceneObjectsWhenNotUsingSceneLists);
+        EditorGUILayout.PropertyField(logSceneCleanup);
+        EditorGUILayout.PropertyField(activateNewInstances);
+        EditorGUILayout.PropertyField(runtimeCleanupPoll);
+        if (runtimeCleanupPoll.boolValue)
+        {
+            EditorGUILayout.PropertyField(runtimeCleanupPollDurationSeconds);
+            EditorGUILayout.PropertyField(runtimeCleanupPollIntervalSeconds);
+        }
 
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Addressables", EditorStyles.boldLabel);

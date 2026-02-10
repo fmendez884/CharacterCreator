@@ -19,6 +19,12 @@ public class CharacterCreatorEditor : Editor
     private SerializedProperty faceToken;
     private SerializedProperty bodyTokens;
     private SerializedProperty logScanResults;
+    private SerializedProperty cleanupSceneObjectsWhenNotUsingSceneLists;
+    private SerializedProperty logSceneCleanup;
+    private SerializedProperty runtimeCleanupPoll;
+    private SerializedProperty runtimeCleanupPollDurationSeconds;
+    private SerializedProperty runtimeCleanupPollIntervalSeconds;
+    private SerializedProperty activateNewInstances;
     private SerializedProperty gender;
     private SerializedProperty maleHairIndex;
     private SerializedProperty maleFaceIndex;
@@ -58,6 +64,12 @@ public class CharacterCreatorEditor : Editor
         faceToken = serializedObject.FindProperty("faceToken");
         bodyTokens = serializedObject.FindProperty("bodyTokens");
         logScanResults = serializedObject.FindProperty("logScanResults");
+        cleanupSceneObjectsWhenNotUsingSceneLists = serializedObject.FindProperty("cleanupSceneObjectsWhenNotUsingSceneLists");
+        logSceneCleanup = serializedObject.FindProperty("logSceneCleanup");
+        runtimeCleanupPoll = serializedObject.FindProperty("runtimeCleanupPoll");
+        runtimeCleanupPollDurationSeconds = serializedObject.FindProperty("runtimeCleanupPollDurationSeconds");
+        runtimeCleanupPollIntervalSeconds = serializedObject.FindProperty("runtimeCleanupPollIntervalSeconds");
+        activateNewInstances = serializedObject.FindProperty("activateNewInstances");
         gender = serializedObject.FindProperty("gender");
         maleHairIndex = serializedObject.FindProperty("maleHairIndex");
         maleFaceIndex = serializedObject.FindProperty("maleFaceIndex");
@@ -119,6 +131,18 @@ public class CharacterCreatorEditor : Editor
                         creator.RebuildFromScene();
                 }
             }
+        }
+
+        EditorGUILayout.Space(8);
+        EditorGUILayout.LabelField("Scene Cleanup", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(cleanupSceneObjectsWhenNotUsingSceneLists);
+        EditorGUILayout.PropertyField(logSceneCleanup);
+        EditorGUILayout.PropertyField(activateNewInstances);
+        EditorGUILayout.PropertyField(runtimeCleanupPoll);
+        if (runtimeCleanupPoll.boolValue)
+        {
+            EditorGUILayout.PropertyField(runtimeCleanupPollDurationSeconds);
+            EditorGUILayout.PropertyField(runtimeCleanupPollIntervalSeconds);
         }
 
         EditorGUILayout.Space(8);

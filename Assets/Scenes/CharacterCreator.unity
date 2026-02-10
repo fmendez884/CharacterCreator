@@ -3717,6 +3717,12 @@ MonoBehaviour:
   - ' group'
   - ' part'
   logScanResults: 1
+  cleanupSceneObjectsWhenNotUsingSceneLists: 1
+  logSceneCleanup: 1
+  runtimeCleanupPoll: 1
+  runtimeCleanupPollDurationSeconds: 5
+  runtimeCleanupPollIntervalSeconds: 0.5
+  activateNewInstances: 0
   gender: 0
   headIndex: -1
   bodyIndex: -1
@@ -3736,6 +3742,12 @@ MonoBehaviour:
   logAddressables: 1
   addressableIndex: {fileID: 11400000, guid: 9467e98ea8d1f32428ebf7ff4b640f4e, type: 2}
   useAddressableIndex: 1
+  cleanupSceneObjectsWhenNotUsingSceneLists: 1
+  logSceneCleanup: 1
+  runtimeCleanupPoll: 1
+  runtimeCleanupPollDurationSeconds: 5
+  runtimeCleanupPollIntervalSeconds: 0.5
+  activateNewInstances: 0
 --- !u!4 &875135699
 Transform:
   m_ObjectHideFlags: 0

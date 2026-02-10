@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -42,6 +43,18 @@ public class CharacterCreator : MonoBehaviour
     [SerializeField] private string[] excludeNameTokens = { " group", " part" };
     [SerializeField] private bool logScanResults = true;
 
+    [Header("Scene Cleanup")]
+    [SerializeField] private bool cleanupSceneObjectsWhenNotUsingSceneLists = true;
+
+    [Header("Debug")]
+    [SerializeField] private bool logSceneCleanup;
+
+    [Header("Runtime Cleanup")]
+    [SerializeField] private bool runtimeCleanupPoll = true;
+    [SerializeField] private float runtimeCleanupPollDurationSeconds = 5f;
+    [SerializeField] private float runtimeCleanupPollIntervalSeconds = 0.5f;
+    [SerializeField] private bool activateNewInstances = false;
+
     [Header("Force Hide")]
     [SerializeField] private bool forceHideOppositeGenderObjects = true;
 
@@ -80,6 +93,7 @@ public class CharacterCreator : MonoBehaviour
     [SerializeField] private string filterText = string.Empty;
 
     public event Action Changed;
+    public bool LogSceneCleanup => logSceneCleanup;
 
     [Header("Addressables (Hair/Face)")]
     [SerializeField] private bool useAddressablesForHairFace = true;
@@ -109,6 +123,9 @@ public class CharacterCreator : MonoBehaviour
     private readonly HashSet<GameObject> hiddenMaleObjects = new();
     private readonly HashSet<GameObject> hiddenFemaleObjects = new();
     private bool indexKeysLoaded;
+    private Coroutine runtimeCleanupCoroutine;
+    private bool scanRootsCached;
+    private Transform[] cachedScanRoots = Array.Empty<Transform>();
 #if ENABLE_ADDRESSABLES
     private AsyncOperationHandle<IList<GameObject>> hairLoadHandle;
     private AsyncOperationHandle<IList<GameObject>> faceLoadHandle;
@@ -173,6 +190,17 @@ public class CharacterCreator : MonoBehaviour
             LoadAddressables();
 
         ApplySelection();
+        StartRuntimeCleanupPoll();
+    }
+
+    private void OnEnable()
+    {
+        StartRuntimeCleanupPoll();
+    }
+
+    private void OnDisable()
+    {
+        StopRuntimeCleanupPoll();
     }
 
     private void OnDestroy()
@@ -183,6 +211,59 @@ public class CharacterCreator : MonoBehaviour
     private void OnValidate()
     {
         ClampIndices();
+    }
+
+    private void StartRuntimeCleanupPoll()
+    {
+        if (!cleanupSceneObjectsWhenNotUsingSceneLists || !runtimeCleanupPoll)
+            return;
+
+        if (runtimeCleanupCoroutine != null)
+            StopCoroutine(runtimeCleanupCoroutine);
+
+        runtimeCleanupCoroutine = StartCoroutine(RuntimeCleanupPoll());
+    }
+
+    private void StopRuntimeCleanupPoll()
+    {
+        if (runtimeCleanupCoroutine == null)
+            return;
+
+        StopCoroutine(runtimeCleanupCoroutine);
+        runtimeCleanupCoroutine = null;
+    }
+
+    private IEnumerator RuntimeCleanupPoll()
+    {
+        float duration = Mathf.Max(0f, runtimeCleanupPollDurationSeconds);
+        float interval = Mathf.Max(0.05f, runtimeCleanupPollIntervalSeconds);
+        if (duration <= 0f)
+            yield break;
+
+        float endTime = Time.realtimeSinceStartup + duration;
+        int iteration = 0;
+
+        if (logSceneCleanup)
+            Debug.Log($"[CharacterCreator] Runtime cleanup poll started. Duration={duration:F1}s Interval={interval:F2}s.", this);
+
+        while (Time.realtimeSinceStartup < endTime)
+        {
+            iteration++;
+            scanRootsCached = false;
+            cachedScanRoots = Array.Empty<Transform>();
+
+            if (autoCollectFromScene && !usePrefabCatalog)
+                AutoCollectFromScene();
+            else
+                CleanupSceneObjectsIfNeeded();
+
+            yield return new WaitForSeconds(interval);
+        }
+
+        if (logSceneCleanup)
+            Debug.Log($"[CharacterCreator] Runtime cleanup poll finished. Iterations={iteration}.", this);
+
+        runtimeCleanupCoroutine = null;
     }
 
     public void SetGender(Gender newGender)
@@ -424,37 +505,54 @@ public class CharacterCreator : MonoBehaviour
         if (characterRoot != null && !characterRoot.gameObject.activeSelf)
             characterRoot.gameObject.SetActive(true);
 
+        if (logSceneCleanup)
+        {
+            Debug.Log(
+                $"[CharacterCreator] ApplySelection start. Gender={gender} UsePrefabCatalog={usePrefabCatalog} UseAddressablesHairFace={useAddressablesForHairFace} ManageBaseBodies={manageBaseBodies} UseAddressablesBodies={useAddressablesForBodies} HairVisibleOverride={hairVisibleOverride}.",
+                this
+            );
+        }
+
+        LogActiveSnapshot("Before cleanup");
         ForceHideOppositeGenderObjects();
+        CleanupSceneObjectsIfNeeded();
+        LogActiveSnapshot("After cleanup");
 
         if (manageBaseBodies)
         {
             if (useAddressablesForBodies)
             {
                 ApplyAddressableBodies();
+                LogActiveSnapshot("After ApplyAddressableBodies");
                 if (!usePrefabCatalog)
                 {
                     ApplyGroup(maleBases, false);
                     ApplyGroup(femaleBases, false);
+                    LogActiveSnapshot("After ApplyGroup base bodies (addressables)");
                 }
             }
             else if (usePrefabCatalog)
             {
                 ApplyCatalogBodies();
+                LogActiveSnapshot("After ApplyCatalogBodies");
             }
             else
             {
                 ApplyGroup(maleBases, gender == Gender.Male);
                 ApplyGroup(femaleBases, gender == Gender.Female);
+                LogActiveSnapshot("After ApplyGroup base bodies (scene)");
             }
         }
 
         if (useAddressablesForHairFace)
         {
             ApplyAddressableSelection();
+            LogActiveSnapshot("After ApplyAddressableSelection");
         }
         else if (usePrefabCatalog)
         {
             InstantiateCatalogSelection();
+            LogActiveSnapshot("After InstantiateCatalogSelection");
         }
         else
         {
@@ -462,15 +560,18 @@ public class CharacterCreator : MonoBehaviour
             ApplyList(maleFaces, gender == Gender.Male ? maleFaceIndex : -1);
             ApplyList(femaleHairs, gender == Gender.Female ? femaleHairIndex : -1);
             ApplyList(femaleFaces, gender == Gender.Female ? femaleFaceIndex : -1);
+            LogActiveSnapshot("After ApplyList hair/face (scene)");
         }
 
         if (manageBaseBodies && !useAddressablesForBodies && !usePrefabCatalog)
         {
             SetInstanceActive(maleBodyInstances, false);
             SetInstanceActive(femaleBodyInstances, false);
+            LogActiveSnapshot("After SetInstanceActive base bodies (scene)");
         }
 
         ApplyHairVisibilityOverride();
+        LogActiveSnapshot("After ApplyHairVisibilityOverride");
 
         Changed?.Invoke();
     }
@@ -528,7 +629,10 @@ public class CharacterCreator : MonoBehaviour
 
         var instance = UnityEngine.Object.Instantiate(prefab, characterRoot != null ? characterRoot : transform);
         instance.name = prefabName;
+        instance.SetActive(false);
         assignInstance?.Invoke(instance);
+        if (activateNewInstances)
+            SetInstanceActive(instance, true);
     }
 
     private GameObject FindPrefabByName(string prefabName)
@@ -605,8 +709,10 @@ public class CharacterCreator : MonoBehaviour
 
             var instance = UnityEngine.Object.Instantiate(prefab, characterRoot != null ? characterRoot : transform);
             instance.name = key;
+            instance.SetActive(false);
             instances.Add(instance);
-            SetInstanceActive(instance, gender == forGender);
+            if (activateNewInstances)
+                SetInstanceActive(instance, gender == forGender);
             pending.Remove(key);
         }
     }
@@ -673,6 +779,127 @@ public class CharacterCreator : MonoBehaviour
                 femaleHairInstance.SetActive(show);
             if (!useAddressablesForHairFace && !usePrefabCatalog)
                 ApplyList(femaleHairs, show ? femaleHairIndex : -1);
+        }
+    }
+
+    private void CleanupSceneObjectsIfNeeded()
+    {
+        if (!cleanupSceneObjectsWhenNotUsingSceneLists)
+        {
+            if (logSceneCleanup)
+                Debug.Log("[CharacterCreator] Scene cleanup skipped (toggle disabled).", this);
+            return;
+        }
+
+        bool usingSceneHairFace = !useAddressablesForHairFace && !usePrefabCatalog;
+        bool usingSceneBodies = manageBaseBodies && !useAddressablesForBodies && !usePrefabCatalog;
+
+        if (usingSceneHairFace && usingSceneBodies)
+        {
+            if (logSceneCleanup)
+                Debug.Log("[CharacterCreator] Scene cleanup skipped (using scene lists for hair/face and base bodies).", this);
+            return;
+        }
+
+        bool cleanupHairFace = !usingSceneHairFace;
+        bool cleanupBodies = manageBaseBodies && !usingSceneBodies;
+
+        Transform[] roots = ResolveScanRootsForCleanup();
+        if (roots == null || roots.Length == 0)
+        {
+            if (logSceneCleanup)
+                Debug.Log("[CharacterCreator] Scene cleanup skipped (no scan roots).", this);
+            return;
+        }
+
+        float startTime = logSceneCleanup ? Time.realtimeSinceStartup : 0f;
+        int scanned = 0;
+        int renderable = 0;
+        int excluded = 0;
+        int hairMatches = 0;
+        int faceMatches = 0;
+        int baseMatches = 0;
+        int deactivated = 0;
+        int unmatchedLogged = 0;
+        int matchedLogged = 0;
+        const int sampleLimit = 10;
+
+        foreach (var root in roots)
+        {
+            if (root == null)
+                continue;
+
+            foreach (var child in root.GetComponentsInChildren<Transform>(includeInactive))
+            {
+                if (child == null)
+                    continue;
+
+                scanned++;
+
+                var go = child.gameObject;
+                if (go == null || (characterRoot != null && go == characterRoot.gameObject))
+                    continue;
+
+                if (!HasRenderable(go))
+                    continue;
+
+                renderable++;
+
+                string name = go.name;
+                if (HasExcludedToken(name))
+                {
+                    excluded++;
+                    continue;
+                }
+
+                bool isHair = MatchesToken(name, hairToken);
+                bool isFace = MatchesToken(name, faceToken);
+                bool isBaseBody = MatchesToken(name, bodyBaseToken) && MatchesAnyToken(name, bodyTokens);
+
+                if (isHair)
+                    hairMatches++;
+                if (isFace)
+                    faceMatches++;
+                if (isBaseBody)
+                    baseMatches++;
+
+                if (logSceneCleanup && matchedLogged < sampleLimit && (isHair || isFace || isBaseBody))
+                {
+                    string rootName = child.root != null ? child.root.name : "<null>";
+                    Debug.Log(
+                        $"[CharacterCreator] Cleanup match sample: '{name}' Root='{rootName}' Hair={isHair} Face={isFace} BaseBody={isBaseBody}.",
+                        this
+                    );
+                    matchedLogged++;
+                }
+
+                if (logSceneCleanup && unmatchedLogged < sampleLimit && !isHair && !isFace && !isBaseBody)
+                {
+                    string rootName = child.root != null ? child.root.name : "<null>";
+                    Debug.Log(
+                        $"[CharacterCreator] Cleanup non-match sample: '{name}' Root='{rootName}'.",
+                        this
+                    );
+                    unmatchedLogged++;
+                }
+
+                if ((cleanupHairFace && (isHair || isFace)) || (cleanupBodies && isBaseBody))
+                {
+                    if (go.activeSelf)
+                        deactivated++;
+                    go.SetActive(false);
+                }
+            }
+        }
+
+        if (logSceneCleanup)
+        {
+            float elapsedMs = (Time.realtimeSinceStartup - startTime) * 1000f;
+            string rootNames = roots.Length == 0 ? "<none>" : string.Join(", ", Array.ConvertAll(roots, r => r != null ? r.name : "<null>"));
+            Debug.Log(
+                $"[CharacterCreator] Scene cleanup done. Roots={rootNames}. Scanned={scanned}, Renderable={renderable}, Excluded={excluded}, HairMatches={hairMatches}, FaceMatches={faceMatches}, BaseMatches={baseMatches}, Deactivated={deactivated}, CleanupHairFace={cleanupHairFace}, CleanupBodies={cleanupBodies}, TimeMs={elapsedMs:F1}.",
+                this
+            );
         }
     }
 
@@ -750,6 +977,53 @@ public class CharacterCreator : MonoBehaviour
         }
     }
 
+    private Transform[] ResolveScanRootsForCleanup()
+    {
+        var roots = ResolveScanRoots();
+        bool onlySelf = roots.Length == 1 && roots[0] == transform;
+        bool onlyCharacter = roots.Length == 1 && roots[0] == characterRoot;
+        bool onlySelfAndCharacter = characterRoot != null && roots.Length == 2
+            && ((roots[0] == transform && roots[1] == characterRoot) || (roots[0] == characterRoot && roots[1] == transform));
+
+        if (autoFindScanRootByPrefix && !string.IsNullOrWhiteSpace(scanRootNamePrefix) && parentScanRootsToCharacterRoot && characterRoot != null)
+        {
+            if (onlySelf || onlyCharacter || onlySelfAndCharacter)
+            {
+                var matches = new List<Transform>();
+                foreach (var child in characterRoot.GetComponentsInChildren<Transform>(true))
+                {
+                    if (child != null && child.name.StartsWith(scanRootNamePrefix, StringComparison.OrdinalIgnoreCase))
+                        matches.Add(child);
+                }
+
+                if (matches.Count > 0)
+                    roots = matches.ToArray();
+            }
+        }
+
+        if (characterRoot != null && characterRoot != transform)
+        {
+            var merged = new List<Transform>(roots.Length + 1);
+            var seen = new HashSet<Transform>();
+            foreach (var root in roots)
+            {
+                if (root != null && seen.Add(root))
+                    merged.Add(root);
+            }
+
+            if (seen.Add(characterRoot))
+            {
+                merged.Add(characterRoot);
+                if (logSceneCleanup)
+                    Debug.Log($"[CharacterCreator] ResolveScanRootsForCleanup -> added characterRoot '{characterRoot.name}'. Count={merged.Count}.", this);
+            }
+
+            roots = merged.ToArray();
+        }
+
+        return roots;
+    }
+
     private void AutoCollectFromScene()
     {
         EnsureCharacterRoot();
@@ -767,6 +1041,14 @@ public class CharacterCreator : MonoBehaviour
 
         Transform[] roots = ResolveScanRoots();
 
+        float startTime = logSceneCleanup ? Time.realtimeSinceStartup : 0f;
+        int scanned = 0;
+        int renderable = 0;
+        int excluded = 0;
+        int hairMatches = 0;
+        int faceMatches = 0;
+        int bodyMatches = 0;
+
         foreach (var root in roots)
         {
             if (root == null)
@@ -778,19 +1060,33 @@ public class CharacterCreator : MonoBehaviour
                 if (go == null || (characterRoot != null && go == characterRoot.gameObject))
                     continue;
 
+                scanned++;
+
                 string name = go.name;
 
                 if (!HasRenderable(go))
                     continue;
 
+                renderable++;
+
                 if (HasExcludedToken(name))
+                {
+                    excluded++;
                     continue;
+                }
 
                 bool isHair = MatchesToken(name, hairToken);
                 bool isFace = MatchesToken(name, faceToken);
                 bool isBody = MatchesAnyToken(name, bodyTokens);
                 bool isMale = MatchesToken(name, maleToken);
                 bool isFemale = MatchesToken(name, femaleToken);
+
+                if (isHair)
+                    hairMatches++;
+                if (isFace)
+                    faceMatches++;
+                if (isBody)
+                    bodyMatches++;
 
                 if (!isMale && !isFemale)
                     continue;
@@ -829,6 +1125,19 @@ public class CharacterCreator : MonoBehaviour
 
         if (logScanResults)
             LogScanSummary(roots);
+
+        if (logSceneCleanup)
+        {
+            float elapsedMs = (Time.realtimeSinceStartup - startTime) * 1000f;
+            string rootNames = roots.Length == 0 ? "<none>" : string.Join(", ", Array.ConvertAll(roots, r => r != null ? r.name : "<null>"));
+            Debug.Log(
+                $"[CharacterCreator] Auto-collect done. Roots={rootNames}. Scanned={scanned}, Renderable={renderable}, Excluded={excluded}, HairMatches={hairMatches}, FaceMatches={faceMatches}, BodyMatches={bodyMatches}, TimeMs={elapsedMs:F1}.",
+                this
+            );
+        }
+
+        if (cleanupSceneObjectsWhenNotUsingSceneLists)
+            CleanupSceneObjectsIfNeeded();
     }
 
     private void ApplyAddressableSelection()
@@ -1132,7 +1441,10 @@ public class CharacterCreator : MonoBehaviour
 
             var instance = handle.Result;
             instance.name = key;
+            instance.SetActive(false);
             assignInstance?.Invoke(instance);
+            if (activateNewInstances)
+                SetInstanceActive(instance, true);
         };
 #endif
     }
@@ -1162,23 +1474,25 @@ public class CharacterCreator : MonoBehaviour
             pending.Add(key);
 
 #if ENABLE_ADDRESSABLES
-            Addressables.InstantiateAsync(key, characterRoot).Completed += handle =>
+        Addressables.InstantiateAsync(key, characterRoot).Completed += handle =>
+        {
+            pending.Remove(key);
+            if (handle.Status != AsyncOperationStatus.Succeeded)
             {
-                pending.Remove(key);
-                if (handle.Status != AsyncOperationStatus.Succeeded)
-                {
                     if (logAddressables)
                         Debug.LogWarning($"[CharacterCreator] Failed to load Body '{key}'.");
                     return;
                 }
 
-                var instance = handle.Result;
-                instance.name = key;
-                instances.Add(instance);
+            var instance = handle.Result;
+            instance.name = key;
+            instance.SetActive(false);
+            instances.Add(instance);
+            if (activateNewInstances)
                 SetInstanceActive(instance, gender == forGender);
-            };
+        };
 #endif
-        }
+    }
     }
 
     private void ReleaseAddressables()
@@ -1321,32 +1635,149 @@ public class CharacterCreator : MonoBehaviour
 
     private void ApplyList(List<GameObject> list, int selectedIndex)
     {
+        if (logSceneCleanup)
+        {
+            GameObject selected = selectedIndex >= 0 && selectedIndex < list.Count ? list[selectedIndex] : null;
+            int childCount = selected != null ? selected.GetComponentsInChildren<Transform>(true).Length : 0;
+            int rendererCount = selected != null ? selected.GetComponentsInChildren<Renderer>(true).Length : 0;
+            string selectedName = selected != null ? selected.name : "<none>";
+            Debug.Log(
+                $"[CharacterCreator] ApplyList count={list.Count}, selectedIndex={selectedIndex}, selected={selectedName}, childCount={childCount}, rendererCount={rendererCount}.",
+                this
+            );
+        }
+
+        int activated = 0;
+        int deactivated = 0;
+
         for (int i = 0; i < list.Count; i++)
         {
             var item = list[i];
             if (item == null)
                 continue;
 
-            SetItemActiveWithHierarchy(item, i == selectedIndex);
+            bool targetActive = i == selectedIndex;
+            if (logSceneCleanup)
+            {
+                if (targetActive && !item.activeSelf)
+                    activated++;
+                else if (!targetActive && item.activeSelf)
+                    deactivated++;
+            }
+
+            SetItemActiveWithHierarchy(item, targetActive);
         }
+
+        if (logSceneCleanup)
+            Debug.Log($"[CharacterCreator] ApplyList toggles: Activated={activated}, Deactivated={deactivated}.", this);
     }
 
     private void ApplyGroup(List<GameObject> list, bool enable)
     {
+        int activated = 0;
+        int deactivated = 0;
+
         for (int i = 0; i < list.Count; i++)
         {
             var item = list[i];
             if (item == null)
                 continue;
 
+            if (logSceneCleanup)
+            {
+                if (enable && !item.activeSelf)
+                    activated++;
+                else if (!enable && item.activeSelf)
+                    deactivated++;
+            }
+
             SetItemActiveWithHierarchy(item, enable);
         }
+
+        if (logSceneCleanup)
+            Debug.Log($"[CharacterCreator] ApplyGroup enable={enable}, Count={list.Count}, Activated={activated}, Deactivated={deactivated}.", this);
+    }
+
+    private void LogActiveSnapshot(string label)
+    {
+        if (!logSceneCleanup)
+            return;
+
+        Transform[] roots = ResolveScanRootsForCleanup();
+        if (roots == null || roots.Length == 0)
+        {
+            Debug.Log($"[CharacterCreator] {label} snapshot skipped (no scan roots).", this);
+            return;
+        }
+
+        int scanned = 0;
+        int renderable = 0;
+        int excluded = 0;
+        int activeRenderable = 0;
+        int activeHair = 0;
+        int activeFace = 0;
+        int activeBase = 0;
+
+        foreach (var root in roots)
+        {
+            if (root == null)
+                continue;
+
+            foreach (var child in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (child == null)
+                    continue;
+
+                scanned++;
+
+                var go = child.gameObject;
+                if (go == null || (characterRoot != null && go == characterRoot.gameObject))
+                    continue;
+
+                if (!HasRenderable(go))
+                    continue;
+
+                renderable++;
+
+                string name = go.name;
+                if (HasExcludedToken(name))
+                {
+                    excluded++;
+                    continue;
+                }
+
+                bool isHair = MatchesToken(name, hairToken);
+                bool isFace = MatchesToken(name, faceToken);
+                bool isBaseBody = MatchesToken(name, bodyBaseToken) && MatchesAnyToken(name, bodyTokens);
+
+                if (!go.activeInHierarchy)
+                    continue;
+
+                activeRenderable++;
+                if (isHair)
+                    activeHair++;
+                if (isFace)
+                    activeFace++;
+                if (isBaseBody)
+                    activeBase++;
+            }
+        }
+
+        string rootNames = roots.Length == 0 ? "<none>" : string.Join(", ", Array.ConvertAll(roots, r => r != null ? r.name : "<null>"));
+        Debug.Log(
+            $"[CharacterCreator] {label} snapshot. Roots={rootNames}. Scanned={scanned}, Renderable={renderable}, Excluded={excluded}, ActiveRenderable={activeRenderable}, ActiveHair={activeHair}, ActiveFace={activeFace}, ActiveBaseBody={activeBase}.",
+            this
+        );
     }
 
     private static void SetItemActiveWithHierarchy(GameObject item, bool active)
     {
         if (item == null)
             return;
+
+        var owner = item.GetComponentInParent<CharacterCreator>();
+        bool shouldLog = owner != null && owner.LogSceneCleanup;
+        bool wasActive = item.activeSelf;
 
         if (active)
         {
@@ -1357,6 +1788,15 @@ public class CharacterCreator : MonoBehaviour
         else
         {
             item.SetActive(false);
+        }
+
+        if (shouldLog && wasActive != item.activeSelf)
+        {
+            string ownerName = owner != null ? owner.name : "<null>";
+            Debug.Log(
+                $"[CharacterCreator] SetItemActiveWithHierarchy owner='{ownerName}' item='{item.name}' active={active} wasActive={wasActive} nowActive={item.activeSelf}.",
+                owner
+            );
         }
     }
 
@@ -1380,10 +1820,26 @@ public class CharacterCreator : MonoBehaviour
         if (item == null)
             return;
 
+        var owner = item.GetComponentInParent<CharacterCreator>();
+        bool shouldLog = owner != null && owner.LogSceneCleanup;
+        int activated = 0;
+
         foreach (var child in item.GetComponentsInChildren<Transform>(true))
         {
             if (!child.gameObject.activeSelf)
+            {
                 child.gameObject.SetActive(true);
+                activated++;
+            }
+        }
+
+        if (shouldLog && activated > 0)
+        {
+            string ownerName = owner != null ? owner.name : "<null>";
+            Debug.Log(
+                $"[CharacterCreator] EnsureActiveChildren owner='{ownerName}' item='{item.name}' activatedChildren={activated}.",
+                owner
+            );
         }
     }
 
@@ -1395,24 +1851,73 @@ public class CharacterCreator : MonoBehaviour
         characterRoot = ResolveCharacterRoot();
     }
 
+    public void SetCharacterRoot(Transform newRoot)
+    {
+        if (characterRoot == newRoot)
+            return;
+
+        characterRoot = newRoot;
+        InvalidateScanRootCache("characterRoot changed");
+        ApplySelection();
+    }
+
+    private void InvalidateScanRootCache(string reason)
+    {
+        scanRootsCached = false;
+        cachedScanRoots = Array.Empty<Transform>();
+        if (logSceneCleanup)
+            Debug.Log($"[CharacterCreator] Scan root cache invalidated ({reason}).", this);
+    }
+
     private Transform ResolveCharacterRoot()
     {
+        if (scanRootsCached && cachedScanRoots.Length == 1 && cachedScanRoots[0] == transform)
+            InvalidateScanRootCache("resolve character root");
+
         if (!string.IsNullOrWhiteSpace(characterRootName))
         {
             var existing = GameObject.Find(characterRootName);
             if (existing != null)
+            {
+                if (logSceneCleanup)
+                    Debug.Log($"[CharacterCreator] ResolveCharacterRoot -> found '{existing.name}' by name '{characterRootName}'.", this);
                 return existing.transform;
+            }
+
+            if (logSceneCleanup)
+                Debug.Log($"[CharacterCreator] ResolveCharacterRoot -> name '{characterRootName}' not found.", this);
         }
 
         var roots = ResolveScanRoots();
         if (roots.Length == 1 && roots[0] != null)
+        {
+            if (logSceneCleanup)
+                Debug.Log($"[CharacterCreator] ResolveCharacterRoot -> single scan root '{roots[0].name}'.", this);
             return roots[0];
+        }
 
         if (!autoCreateCharacterRoot)
-            return roots.Length > 0 && roots[0] != null ? roots[0] : transform;
+        {
+            var fallback = roots.Length > 0 && roots[0] != null ? roots[0] : transform;
+            if (logSceneCleanup)
+            {
+                string fallbackName = fallback != null ? fallback.name : "<null>";
+                Debug.Log($"[CharacterCreator] ResolveCharacterRoot -> auto-create disabled, using '{fallbackName}'.", this);
+            }
+            return fallback;
+        }
 
         string rootName = string.IsNullOrWhiteSpace(characterRootName) ? "CharacterRoot" : characterRootName;
         var root = new GameObject(rootName).transform;
+
+        if (logSceneCleanup)
+        {
+            string rootNames = roots.Length == 0 ? "<none>" : string.Join(", ", Array.ConvertAll(roots, r => r != null ? r.name : "<null>"));
+            Debug.Log(
+                $"[CharacterCreator] ResolveCharacterRoot -> created '{root.name}'. ParentScanRootsToCharacterRoot={parentScanRootsToCharacterRoot}. ScanRoots={rootNames}.",
+                this
+            );
+        }
 
         if (parentScanRootsToCharacterRoot)
         {
@@ -1621,31 +2126,143 @@ public class CharacterCreator : MonoBehaviour
     {
         bool hasManualRoot = scanRoots is { Length: > 0 } && Array.Exists(scanRoots, root => root != null);
         if (hasManualRoot)
-            return scanRoots;
-
-        if (autoFindScanRootByPrefix && !string.IsNullOrWhiteSpace(scanRootNamePrefix))
         {
-            var scene = SceneManager.GetActiveScene();
-            if (scene.IsValid())
+            scanRootsCached = false;
+            cachedScanRoots = scanRoots;
+            return scanRoots;
+        }
+
+        if (scanRootsCached && cachedScanRoots is { Length: > 0 })
+        {
+            if (characterRoot != null && characterRoot != transform && cachedScanRoots.Length == 1 && cachedScanRoots[0] == transform)
             {
-                var roots = scene.GetRootGameObjects();
-                var matches = new List<Transform>();
-
-                foreach (var root in roots)
-                {
-                    if (root == null)
-                        continue;
-
-                    if (root.name.StartsWith(scanRootNamePrefix, StringComparison.OrdinalIgnoreCase))
-                        matches.Add(root.transform);
-                }
-
-                if (matches.Count > 0)
-                    return matches.ToArray();
+                InvalidateScanRootCache("characterRoot available");
+            }
+            else
+            {
+                if (logSceneCleanup)
+                    Debug.Log($"[CharacterCreator] Using cached scan roots. Count={cachedScanRoots.Length}.", this);
+                return cachedScanRoots;
             }
         }
 
-        return new[] { transform };
+        if (autoFindScanRootByPrefix && !string.IsNullOrWhiteSpace(scanRootNamePrefix))
+        {
+            var matches = FindScanRootsByPrefix(scanRootNamePrefix);
+            if (matches.Count > 0)
+            {
+                cachedScanRoots = matches.ToArray();
+                scanRootsCached = true;
+                if (logSceneCleanup)
+                {
+                    string rootNames = cachedScanRoots.Length == 0 ? "<none>" : string.Join(", ", Array.ConvertAll(cachedScanRoots, r => r != null ? r.name : "<null>"));
+                    Debug.Log($"[CharacterCreator] Scan roots resolved by prefix '{scanRootNamePrefix}'. Count={cachedScanRoots.Length}. Roots={rootNames}.", this);
+                }
+                return cachedScanRoots;
+            }
+        }
+
+        var tokenMatches = FindScanRootsByTokens();
+        if (tokenMatches.Count > 0)
+        {
+            cachedScanRoots = tokenMatches.ToArray();
+            scanRootsCached = true;
+            if (logSceneCleanup)
+            {
+                string rootNames = cachedScanRoots.Length == 0 ? "<none>" : string.Join(", ", Array.ConvertAll(cachedScanRoots, r => r != null ? r.name : "<null>"));
+                Debug.Log($"[CharacterCreator] Scan roots resolved by tokens. Count={cachedScanRoots.Length}. Roots={rootNames}.", this);
+            }
+            return cachedScanRoots;
+        }
+
+        return new[] { characterRoot != null ? characterRoot : transform };
+    }
+
+    private List<Transform> FindScanRootsByPrefix(string prefix)
+    {
+        var matches = new List<Transform>();
+        if (string.IsNullOrWhiteSpace(prefix))
+            return matches;
+
+        var seen = new HashSet<Transform>();
+        int sceneCount = SceneManager.sceneCount;
+        for (int i = 0; i < sceneCount; i++)
+        {
+            var scene = SceneManager.GetSceneAt(i);
+            if (!scene.IsValid())
+                continue;
+
+            var roots = scene.GetRootGameObjects();
+            for (int r = 0; r < roots.Length; r++)
+            {
+                var root = roots[r];
+                if (root == null)
+                    continue;
+
+                foreach (var child in root.GetComponentsInChildren<Transform>(true))
+                {
+                    if (child == null || !seen.Add(child))
+                        continue;
+
+                    if (child.name.IndexOf(prefix, StringComparison.OrdinalIgnoreCase) >= 0)
+                        matches.Add(child);
+                }
+            }
+        }
+
+        return matches;
+    }
+
+    private List<Transform> FindScanRootsByTokens()
+    {
+        var matches = new HashSet<Transform>();
+        int sceneCount = SceneManager.sceneCount;
+        for (int i = 0; i < sceneCount; i++)
+        {
+            var scene = SceneManager.GetSceneAt(i);
+            if (!scene.IsValid())
+                continue;
+
+            var roots = scene.GetRootGameObjects();
+            for (int r = 0; r < roots.Length; r++)
+            {
+                var root = roots[r];
+                if (root == null)
+                    continue;
+
+                foreach (var child in root.GetComponentsInChildren<Transform>(true))
+                {
+                    if (child == null)
+                        continue;
+
+                    var go = child.gameObject;
+                    if (go == null)
+                        continue;
+
+                    if (!HasRenderable(go))
+                        continue;
+
+                    string name = go.name;
+                    if (HasExcludedToken(name))
+                        continue;
+
+                    bool isHair = MatchesToken(name, hairToken);
+                    bool isFace = MatchesToken(name, faceToken);
+                    bool isBody = MatchesAnyToken(name, bodyTokens) || MatchesToken(name, bodyBaseToken);
+
+                if (!isHair && !isFace && !isBody)
+                    continue;
+
+                    var rootTransform = child.root;
+                    if (rootTransform == transform)
+                        rootTransform = root.transform;
+
+                    matches.Add(rootTransform);
+                }
+            }
+        }
+
+        return new List<Transform>(matches);
     }
 
     private void LogScanSummary(Transform[] roots)

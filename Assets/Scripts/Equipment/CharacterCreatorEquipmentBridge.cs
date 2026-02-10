@@ -72,6 +72,14 @@ public class CharacterCreatorEquipmentBridge : MonoBehaviour
         if (characterCreator == null || equipmentSystem == null)
             return;
 
+        if (characterCreator.LogSceneCleanup)
+        {
+            Debug.Log(
+                $"[CharacterCreatorEquipmentBridge] SyncHairVisibility start. HideHairWhenHelmetEquipped={hideHairWhenHelmetEquipped} HelmetEquipped={equipmentSystem.IsSlotEquipped(EquipmentSystem.Slot.Head)}.",
+                this
+            );
+        }
+
         if (!hideHairWhenHelmetEquipped)
         {
             characterCreator.SetHairVisibilityOverride(true);
