@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -65,6 +66,8 @@ public class EquipmentSystem : MonoBehaviour
 
     [Header("Debug")]
     [SerializeField] private bool logSceneCleanup;
+    [SerializeField] private bool logToFile;
+    [SerializeField] private string logFileName = "EquipmentSystem-debug.log";
 
     [Header("Runtime Cleanup")]
     [SerializeField] private bool runtimeCleanupPoll = true;
@@ -302,6 +305,7 @@ public class EquipmentSystem : MonoBehaviour
 
         characterRoot = newRoot;
         InvalidateScanRootCache("characterRoot changed");
+        ReparentRuntimeInstances(ResolveEquipmentRoot(), ResolveWeaponSocket());
         ApplySelection();
     }
 
@@ -916,11 +920,18 @@ public class EquipmentSystem : MonoBehaviour
             );
         }
 
-        SwapPrefabInstance(ref headInstance, headPrefab, ResolveEquipmentRoot());
-        SwapPrefabInstance(ref bodyInstance, bodyPrefab, ResolveEquipmentRoot());
-        SwapPrefabInstance(ref handsInstance, handsPrefab, ResolveEquipmentRoot());
-        SwapPrefabInstance(ref legsInstance, legsPrefab, ResolveEquipmentRoot());
-        SwapPrefabInstance(ref feetInstance, feetPrefab, ResolveEquipmentRoot());
+        var root = ResolveEquipmentRoot();
+        SwapPrefabInstance(ref headInstance, headPrefab, root);
+        SwapPrefabInstance(ref bodyInstance, bodyPrefab, root);
+        SwapPrefabInstance(ref handsInstance, handsPrefab, root);
+        SwapPrefabInstance(ref legsInstance, legsPrefab, root);
+        SwapPrefabInstance(ref feetInstance, feetPrefab, root);
+
+        SetInstanceActive(headInstance, headPrefab != null);
+        SetInstanceActive(bodyInstance, bodyPrefab != null);
+        SetInstanceActive(handsInstance, handsPrefab != null);
+        SetInstanceActive(legsInstance, legsPrefab != null);
+        SetInstanceActive(feetInstance, feetPrefab != null);
 
         UpdateBaseBodyVisibility(Slot.Head, headPrefab != null);
         UpdateBaseBodyVisibility(Slot.Body, bodyPrefab != null);
@@ -935,6 +946,7 @@ public class EquipmentSystem : MonoBehaviour
         if (logSceneCleanup)
             Debug.Log($"[EquipmentSystem] ApplyCatalogWeapon selection: Weapon='{prefab?.name ?? "<none>"}'.", this);
         SwapPrefabInstance(ref weaponInstance, prefab, ResolveWeaponSocket());
+        SetInstanceActive(weaponInstance, prefab != null);
     }
 
     private static void SetInstanceActive(GameObject instance, bool active)
@@ -1001,34 +1013,185 @@ public class EquipmentSystem : MonoBehaviour
         if (string.IsNullOrWhiteSpace(slotToken))
             return;
 
+        LogDiagnostics(
+            $"[EquipmentSystem] UpdateBaseBodyVisibility slot={slot} token='{slotToken}' hasEquipment={hasEquipment} gender={gender}."
+        );
+
         SetBaseBodySlotActive(slotToken, !hasEquipment);
     }
 
     private void SetBaseBodySlotActive(string slotToken, bool active)
     {
         EnsureCharacterRoot();
-        if (characterRoot == null)
+        var roots = new List<Transform>(4);
+        var equipmentRoot = ResolveEquipmentRoot();
+        if (equipmentRoot != null)
+            roots.Add(equipmentRoot);
+        if (characterRoot != null && characterRoot != equipmentRoot)
+            roots.Add(characterRoot);
+        var scanRoots = ResolveScanRootsForCleanup();
+        if (scanRoots != null && scanRoots.Length > 0)
+        {
+            for (int i = 0; i < scanRoots.Length; i++)
+            {
+                var root = scanRoots[i];
+                if (root != null && !roots.Contains(root))
+                    roots.Add(root);
+            }
+        }
+        if (roots.Count == 0)
+            roots.Add(transform);
+
+        var instanceLookup = new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
+        CacheBaseBodyInstances(instanceLookup, maleBaseBodyInstances);
+        CacheBaseBodyInstances(instanceLookup, femaleBaseBodyInstances);
+
+        int matchCount = 0;
+        int rootsWithMatches = 0;
+        bool captureSamples = logSceneCleanup || logToFile;
+        var sample = captureSamples ? new List<string>(5) : null;
+
+        foreach (var root in roots)
+        {
+            if (root == null)
+                continue;
+
+            int rootMatches = 0;
+
+            foreach (var child in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (child == null)
+                    continue;
+
+                var go = child.gameObject;
+                if (go == null)
+                    continue;
+
+                string name = go.name;
+        if (instanceLookup.TryGetValue(name, out var instance))
+        {
+            go = instance;
+            name = go.name;
+        }
+                if (!MatchesToken(name, equipmentBaseToken))
+                    continue;
+                if (!MatchesToken(name, slotToken))
+                    continue;
+                if (!MatchesCurrentGender(name))
+                    continue;
+
+                if (go.activeSelf != active)
+                {
+                    go.SetActive(active);
+                    matchCount++;
+                    rootMatches++;
+                    if (sample != null && sample.Count < 5)
+                        sample.Add($"{name} (Root='{root.name}')");
+                }
+            }
+
+            if (rootMatches > 0)
+                rootsWithMatches++;
+        }
+
+        if (logSceneCleanup || logToFile)
+        {
+            string rootNames = string.Join(", ", roots.ConvertAll(r => r != null ? r.name : "<null>"));
+            string sampleText = sample is { Count: > 0 } ? string.Join(", ", sample) : "<none>";
+            LogDiagnostics(
+                $"[EquipmentSystem] SetBaseBodySlotActive token='{slotToken}' active={active} roots={rootNames} matched={matchCount} rootsWithMatches={rootsWithMatches} sample={sampleText}."
+            );
+        }
+    }
+
+    private static void CacheBaseBodyInstances(Dictionary<string, GameObject> lookup, List<GameObject> instances)
+    {
+        if (lookup == null || instances == null)
             return;
 
-        foreach (var child in characterRoot.GetComponentsInChildren<Transform>(true))
+        for (int i = 0; i < instances.Count; i++)
         {
-            if (child == null)
+            var instance = instances[i];
+            if (instance == null)
                 continue;
 
-            var go = child.gameObject;
-            if (go == null)
+            string name = instance.name;
+            if (string.IsNullOrWhiteSpace(name))
                 continue;
 
-            string name = go.name;
-            if (!MatchesToken(name, equipmentBaseToken))
-                continue;
-            if (!MatchesToken(name, slotToken))
-                continue;
-            if (!MatchesCurrentGender(name))
-                continue;
-
-            go.SetActive(active);
+            lookup[name] = instance;
         }
+    }
+
+    private void LogDiagnostics(string message)
+    {
+        if (logSceneCleanup)
+            Debug.Log(message, this);
+
+        if (!logToFile)
+            return;
+
+        AppendLogToFile(message);
+    }
+
+    private void AppendLogToFile(string message)
+    {
+        if (string.IsNullOrWhiteSpace(logFileName))
+            return;
+
+        try
+        {
+            string logDir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Logs"));
+            if (!Directory.Exists(logDir))
+                Directory.CreateDirectory(logDir);
+
+            string path = Path.Combine(logDir, logFileName);
+            File.AppendAllText(path, $"{DateTime.Now:O} {message}{Environment.NewLine}");
+        }
+        catch (Exception ex)
+        {
+            if (logSceneCleanup)
+                Debug.LogWarning($"[EquipmentSystem] Failed to write log file '{logFileName}': {ex.Message}", this);
+            logToFile = false;
+        }
+    }
+
+    private void ReparentRuntimeInstances(Transform newEquipmentRoot, Transform newWeaponRoot)
+    {
+        if (newEquipmentRoot != null)
+        {
+            ReparentInstance(headInstance, newEquipmentRoot);
+            ReparentInstance(bodyInstance, newEquipmentRoot);
+            ReparentInstance(handsInstance, newEquipmentRoot);
+            ReparentInstance(legsInstance, newEquipmentRoot);
+            ReparentInstance(feetInstance, newEquipmentRoot);
+            ReparentInstances(maleBaseBodyInstances, newEquipmentRoot);
+            ReparentInstances(femaleBaseBodyInstances, newEquipmentRoot);
+        }
+
+        if (newWeaponRoot != null)
+            ReparentInstance(weaponInstance, newWeaponRoot);
+    }
+
+    private static void ReparentInstances(List<GameObject> instances, Transform newParent)
+    {
+        if (instances == null || newParent == null)
+            return;
+
+        for (int i = 0; i < instances.Count; i++)
+            ReparentInstance(instances[i], newParent);
+    }
+
+    private static void ReparentInstance(GameObject instance, Transform newParent)
+    {
+        if (instance == null || newParent == null)
+            return;
+
+        var instanceTransform = instance.transform;
+        if (instanceTransform.parent == newParent)
+            return;
+
+        instanceTransform.SetParent(newParent, true);
     }
 
     private bool MatchesCurrentGender(string name)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 #if ENABLE_ADDRESSABLES
@@ -48,6 +49,8 @@ public class CharacterCreator : MonoBehaviour
 
     [Header("Debug")]
     [SerializeField] private bool logSceneCleanup;
+    [SerializeField] private bool logToFile;
+    [SerializeField] private string logFileName = "CharacterCreator-debug.log";
 
     [Header("Runtime Cleanup")]
     [SerializeField] private bool runtimeCleanupPoll = true;
@@ -600,6 +603,19 @@ public class CharacterCreator : MonoBehaviour
             SetInstanceActive(maleHairInstance, false);
             SetInstanceActive(maleFaceInstance, false);
         }
+
+        if (logSceneCleanup || logToFile)
+        {
+            string maleHairState = maleHairInstance != null ? $"{maleHairInstance.name} active={maleHairInstance.activeSelf}" : "<none>";
+            string maleFaceState = maleFaceInstance != null ? $"{maleFaceInstance.name} active={maleFaceInstance.activeSelf}" : "<none>";
+            string femaleHairState = femaleHairInstance != null ? $"{femaleHairInstance.name} active={femaleHairInstance.activeSelf}" : "<none>";
+            string femaleFaceState = femaleFaceInstance != null ? $"{femaleFaceInstance.name} active={femaleFaceInstance.activeSelf}" : "<none>";
+
+            LogDiagnostics(
+                $"[CharacterCreator] InstantiateCatalogSelection hairKey='{hairKey}' faceKey='{faceKey}' HairVisibleOverride={hairVisibleOverride} " +
+                $"MaleHair={maleHairState} MaleFace={maleFaceState} FemaleHair={femaleHairState} FemaleFace={femaleFaceState}."
+            );
+        }
     }
 
     private void SwapCatalogInstance(GameObject currentInstance, Action<GameObject> assignInstance, string prefabName)
@@ -629,10 +645,8 @@ public class CharacterCreator : MonoBehaviour
 
         var instance = UnityEngine.Object.Instantiate(prefab, characterRoot != null ? characterRoot : transform);
         instance.name = prefabName;
-        instance.SetActive(false);
+        instance.SetActive(true);
         assignInstance?.Invoke(instance);
-        if (activateNewInstances)
-            SetInstanceActive(instance, true);
     }
 
     private GameObject FindPrefabByName(string prefabName)
@@ -1169,6 +1183,52 @@ public class CharacterCreator : MonoBehaviour
 
             SetInstanceActive(maleHairInstance, false);
             SetInstanceActive(maleFaceInstance, false);
+        }
+
+        if (logSceneCleanup || logToFile)
+        {
+            string maleHairState = maleHairInstance != null ? $"{maleHairInstance.name} active={maleHairInstance.activeSelf}" : "<none>";
+            string maleFaceState = maleFaceInstance != null ? $"{maleFaceInstance.name} active={maleFaceInstance.activeSelf}" : "<none>";
+            string femaleHairState = femaleHairInstance != null ? $"{femaleHairInstance.name} active={femaleHairInstance.activeSelf}" : "<none>";
+            string femaleFaceState = femaleFaceInstance != null ? $"{femaleFaceInstance.name} active={femaleFaceInstance.activeSelf}" : "<none>";
+
+            LogDiagnostics(
+                $"[CharacterCreator] ApplyAddressableSelection hairKey='{hairKey}' faceKey='{faceKey}' HairVisibleOverride={hairVisibleOverride} " +
+                $"MaleHair={maleHairState} MaleFace={maleFaceState} FemaleHair={femaleHairState} FemaleFace={femaleFaceState}."
+            );
+        }
+    }
+
+    private void LogDiagnostics(string message)
+    {
+        if (logSceneCleanup)
+            Debug.Log(message, this);
+
+        if (!logToFile)
+            return;
+
+        AppendLogToFile(message);
+    }
+
+    private void AppendLogToFile(string message)
+    {
+        if (string.IsNullOrWhiteSpace(logFileName))
+            return;
+
+        try
+        {
+            string logDir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Logs"));
+            if (!Directory.Exists(logDir))
+                Directory.CreateDirectory(logDir);
+
+            string path = Path.Combine(logDir, logFileName);
+            File.AppendAllText(path, $"{DateTime.Now:O} {message}{Environment.NewLine}");
+        }
+        catch (Exception ex)
+        {
+            if (logSceneCleanup)
+                Debug.LogWarning($"[CharacterCreator] Failed to write log file '{logFileName}': {ex.Message}", this);
+            logToFile = false;
         }
     }
 

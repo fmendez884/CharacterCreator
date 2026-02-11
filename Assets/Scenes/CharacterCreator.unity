@@ -3719,6 +3719,8 @@ MonoBehaviour:
   logScanResults: 1
   cleanupSceneObjectsWhenNotUsingSceneLists: 1
   logSceneCleanup: 1
+  logToFile: 1
+  logFileName: EquipmentSystem-debug.log
   runtimeCleanupPoll: 1
   runtimeCleanupPollDurationSeconds: 5
   runtimeCleanupPollIntervalSeconds: 0.5
@@ -3744,6 +3746,8 @@ MonoBehaviour:
   useAddressableIndex: 1
   cleanupSceneObjectsWhenNotUsingSceneLists: 1
   logSceneCleanup: 1
+  logToFile: 1
+  logFileName: CharacterCreator-debug.log
   runtimeCleanupPoll: 1
   runtimeCleanupPollDurationSeconds: 5
   runtimeCleanupPollIntervalSeconds: 0.5
