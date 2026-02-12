@@ -63,11 +63,16 @@ public static class EquipmentUIBuilder
         panel.transform.SetParent(root.transform, false);
 
         var panelRect = panel.GetComponent<RectTransform>();
+        panelRect.anchorMin = new Vector2(0f, 1f);
+        panelRect.anchorMax = new Vector2(0f, 1f);
+        panelRect.pivot = new Vector2(0f, 1f);
+        panelRect.anchoredPosition = Vector2.zero;
         panelRect.sizeDelta = new Vector2(360f, 0f);
 
         var panelImage = panel.GetComponent<Image>();
         ApplySprite(panelImage, backgroundSprite);
         panelImage.color = new Color(0f, 0f, 0f, 0.6f);
+        panelImage.raycastTarget = false;
 
         var panelLayout = panel.GetComponent<VerticalLayoutGroup>();
         panelLayout.padding = new RectOffset(12, 12, 12, 12);
@@ -93,12 +98,12 @@ public static class EquipmentUIBuilder
         var genderValue = CreateText(genderRow.transform, "GenderValue", "Male", 14, TextAnchor.MiddleLeft);
         genderValue.gameObject.AddComponent<LayoutElement>().preferredWidth = 190f;
 
-        var headRow = CreateSlotRow(panel.transform, "HeadRow", "Head", buttonSprite, out var headPrev, out var headLabel, out var headNext);
-        var bodyRow = CreateSlotRow(panel.transform, "BodyRow", "Body", buttonSprite, out var bodyPrev, out var bodyLabel, out var bodyNext);
-        var handsRow = CreateSlotRow(panel.transform, "HandsRow", "Hands", buttonSprite, out var handsPrev, out var handsLabel, out var handsNext);
-        var legsRow = CreateSlotRow(panel.transform, "LegsRow", "Legs", buttonSprite, out var legsPrev, out var legsLabel, out var legsNext);
-        var feetRow = CreateSlotRow(panel.transform, "FeetRow", "Feet", buttonSprite, out var feetPrev, out var feetLabel, out var feetNext);
-        var weaponRow = CreateSlotRow(panel.transform, "WeaponRow", "Weapon", buttonSprite, out var weaponPrev, out var weaponLabel, out var weaponNext);
+        var headRow = CreateSlotRow(panel.transform, "HeadRow", "Head", buttonSprite, out var headPrev, out var headLabel, out var headNext, out var headToggle);
+        var bodyRow = CreateSlotRow(panel.transform, "BodyRow", "Body", buttonSprite, out var bodyPrev, out var bodyLabel, out var bodyNext, out var bodyToggle);
+        var handsRow = CreateSlotRow(panel.transform, "HandsRow", "Hands", buttonSprite, out var handsPrev, out var handsLabel, out var handsNext, out var handsToggle);
+        var legsRow = CreateSlotRow(panel.transform, "LegsRow", "Legs", buttonSprite, out var legsPrev, out var legsLabel, out var legsNext, out var legsToggle);
+        var feetRow = CreateSlotRow(panel.transform, "FeetRow", "Feet", buttonSprite, out var feetPrev, out var feetLabel, out var feetNext, out var feetToggle);
+        var weaponRow = CreateSlotRow(panel.transform, "WeaponRow", "Weapon", buttonSprite, out var weaponPrev, out var weaponLabel, out var weaponNext, out var weaponToggle);
 
         var ui = root.AddComponent<EquipmentSelectionUI>();
         var serializedUi = new SerializedObject(ui);
@@ -108,21 +113,27 @@ public static class EquipmentUIBuilder
         serializedUi.FindProperty("genderValueLabel").objectReferenceValue = genderValue;
         serializedUi.FindProperty("headPrevButton").objectReferenceValue = headPrev;
         serializedUi.FindProperty("headNextButton").objectReferenceValue = headNext;
+        serializedUi.FindProperty("headToggleButton").objectReferenceValue = headToggle;
         serializedUi.FindProperty("headLabel").objectReferenceValue = headLabel;
         serializedUi.FindProperty("bodyPrevButton").objectReferenceValue = bodyPrev;
         serializedUi.FindProperty("bodyNextButton").objectReferenceValue = bodyNext;
+        serializedUi.FindProperty("bodyToggleButton").objectReferenceValue = bodyToggle;
         serializedUi.FindProperty("bodyLabel").objectReferenceValue = bodyLabel;
         serializedUi.FindProperty("handsPrevButton").objectReferenceValue = handsPrev;
         serializedUi.FindProperty("handsNextButton").objectReferenceValue = handsNext;
+        serializedUi.FindProperty("handsToggleButton").objectReferenceValue = handsToggle;
         serializedUi.FindProperty("handsLabel").objectReferenceValue = handsLabel;
         serializedUi.FindProperty("legsPrevButton").objectReferenceValue = legsPrev;
         serializedUi.FindProperty("legsNextButton").objectReferenceValue = legsNext;
+        serializedUi.FindProperty("legsToggleButton").objectReferenceValue = legsToggle;
         serializedUi.FindProperty("legsLabel").objectReferenceValue = legsLabel;
         serializedUi.FindProperty("feetPrevButton").objectReferenceValue = feetPrev;
         serializedUi.FindProperty("feetNextButton").objectReferenceValue = feetNext;
+        serializedUi.FindProperty("feetToggleButton").objectReferenceValue = feetToggle;
         serializedUi.FindProperty("feetLabel").objectReferenceValue = feetLabel;
         serializedUi.FindProperty("weaponPrevButton").objectReferenceValue = weaponPrev;
         serializedUi.FindProperty("weaponNextButton").objectReferenceValue = weaponNext;
+        serializedUi.FindProperty("weaponToggleButton").objectReferenceValue = weaponToggle;
         serializedUi.FindProperty("weaponLabel").objectReferenceValue = weaponLabel;
         serializedUi.ApplyModifiedPropertiesWithoutUndo();
 
@@ -140,18 +151,6 @@ public static class EquipmentUIBuilder
         if (uiRoot != null)
             Undo.DestroyObjectImmediate(uiRoot);
 
-        var equipment = GameObject.Find("EquipmentSystem");
-        if (equipment != null)
-            Undo.DestroyObjectImmediate(equipment);
-
-        var eventSystem = GameObject.Find("EventSystem");
-        if (eventSystem != null)
-            Undo.DestroyObjectImmediate(eventSystem);
-
-        var canvas = GameObject.Find("Canvas");
-        if (canvas != null)
-            Undo.DestroyObjectImmediate(canvas);
-
         Undo.CollapseUndoOperations(group);
     }
 
@@ -162,7 +161,7 @@ public static class EquipmentUIBuilder
         CreateEquipmentUI();
     }
 
-    private static GameObject CreateSlotRow(Transform parent, string rowName, string label, Sprite buttonSprite, out Button prev, out Text valueLabel, out Button next)
+    private static GameObject CreateSlotRow(Transform parent, string rowName, string label, Sprite buttonSprite, out Button prev, out Text valueLabel, out Button next, out Button toggle)
     {
         var row = CreateRow(parent, rowName);
         CreateText(row.transform, "Label", label, 14, TextAnchor.MiddleLeft)
@@ -176,6 +175,9 @@ public static class EquipmentUIBuilder
 
         next = CreateButton(row.transform, "NextButton", ">", buttonSprite);
         SetPreferredWidth(next.gameObject, 36f);
+
+        toggle = CreateButton(row.transform, "ToggleButton", "Off", buttonSprite);
+        SetPreferredWidth(toggle.gameObject, 48f);
 
         return row;
     }
@@ -212,6 +214,7 @@ public static class EquipmentUIBuilder
         label.alignment = anchor;
         label.color = Color.white;
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        label.raycastTarget = false;
 
         return label;
     }

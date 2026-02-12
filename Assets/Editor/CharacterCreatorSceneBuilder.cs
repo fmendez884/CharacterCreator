@@ -103,11 +103,19 @@ public static class CharacterCreatorSceneBuilder
                 issues.Add("Bridge.equipmentSystem is not wired to scene EquipmentSystem.");
         }
 
-        if (creatorUi != null && creator != null)
+        if (creatorUi != null)
         {
             var so = new SerializedObject(creatorUi);
-            if (so.FindProperty("creator").objectReferenceValue != creator)
+            if (creator != null && so.FindProperty("creator").objectReferenceValue != creator)
                 issues.Add("CharacterCreatorUI.creator is not wired.");
+            if (so.FindProperty("hairPrevButton").objectReferenceValue == null)
+                issues.Add("CharacterCreatorUI.hairPrevButton is not wired.");
+            if (so.FindProperty("hairNextButton").objectReferenceValue == null)
+                issues.Add("CharacterCreatorUI.hairNextButton is not wired.");
+            if (so.FindProperty("facePrevButton").objectReferenceValue == null)
+                issues.Add("CharacterCreatorUI.facePrevButton is not wired.");
+            if (so.FindProperty("faceNextButton").objectReferenceValue == null)
+                issues.Add("CharacterCreatorUI.faceNextButton is not wired.");
         }
 
         if (equipmentUi != null && equipment != null)
@@ -115,6 +123,15 @@ public static class CharacterCreatorSceneBuilder
             var so = new SerializedObject(equipmentUi);
             if (so.FindProperty("equipment").objectReferenceValue != equipment)
                 issues.Add("EquipmentSelectionUI.equipment is not wired.");
+        }
+
+        if (creator != null)
+        {
+            var so = new SerializedObject(creator);
+            bool useIndex = so.FindProperty("useAddressableIndex").boolValue;
+            bool collectFromScene = so.FindProperty("autoCollectFromScene").boolValue;
+            if (useIndex && collectFromScene)
+                issues.Add("CharacterCreator.autoCollectFromScene must be disabled when useAddressableIndex is enabled.");
         }
 
         return ReportValidation(issues, showDialog);
@@ -205,6 +222,7 @@ public static class CharacterCreatorSceneBuilder
         creatorSo.FindProperty("runtimeCatalog").objectReferenceValue = runtimeCatalog;
         creatorSo.FindProperty("addressableIndex").objectReferenceValue = addressableIndex;
         creatorSo.FindProperty("useAddressableIndex").boolValue = true;
+        creatorSo.FindProperty("autoCollectFromScene").boolValue = false;
         creatorSo.FindProperty("useAddressablesForHairFace").boolValue = true;
         creatorSo.FindProperty("useAddressablesForBodies").boolValue = true;
         creatorSo.FindProperty("usePrefabCatalog").boolValue = false;
@@ -217,9 +235,11 @@ public static class CharacterCreatorSceneBuilder
         equipmentSo.FindProperty("runtimeCatalog").objectReferenceValue = runtimeCatalog;
         equipmentSo.FindProperty("addressableIndex").objectReferenceValue = addressableIndex;
         equipmentSo.FindProperty("useAddressableIndex").boolValue = true;
+        equipmentSo.FindProperty("autoCollectFromScene").boolValue = false;
         equipmentSo.FindProperty("useAddressablesForEquipment").boolValue = true;
         equipmentSo.FindProperty("useAddressablesForWeapons").boolValue = true;
         equipmentSo.FindProperty("useAddressablesForBaseBodies").boolValue = true;
+        equipmentSo.FindProperty("includeUnequippedOption").boolValue = true;
         equipmentSo.FindProperty("usePrefabCatalog").boolValue = false;
         equipmentSo.FindProperty("loadAddressablesOnAwake").boolValue = true;
         equipmentSo.FindProperty("logSceneCleanup").boolValue = false;

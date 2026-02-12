@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -23,11 +25,23 @@ public class CharacterCreatorUI : MonoBehaviour
     [SerializeField] private Button faceNextButton;
     [SerializeField] private Text faceLabel;
 
+    private bool listenersHooked;
+    private bool warnedMissingSelectionButtons;
+
     private void OnEnable()
     {
-        if (creator == null)
-            return;
+        NormalizeUiLayoutAndRaycasts();
 
+        if (creator == null)
+            creator = FindObjectOfType<CharacterCreator>();
+
+        if (creator == null)
+        {
+            Debug.LogWarning("[CharacterCreatorUI] Missing CharacterCreator reference.", this);
+            return;
+        }
+
+        EnsureSelectionButtonBindings();
         Hookup();
         creator.Changed += Refresh;
         Refresh();
@@ -44,6 +58,9 @@ public class CharacterCreatorUI : MonoBehaviour
 
     private void Hookup()
     {
+        if (listenersHooked)
+            return;
+
         if (genderToggleButton != null)
             genderToggleButton.onClick.AddListener(OnGenderToggle);
 
@@ -59,10 +76,15 @@ public class CharacterCreatorUI : MonoBehaviour
             facePrevButton.onClick.AddListener(OnFacePrev);
         if (faceNextButton != null)
             faceNextButton.onClick.AddListener(OnFaceNext);
+
+        listenersHooked = true;
     }
 
     private void Unhook()
     {
+        if (!listenersHooked)
+            return;
+
         if (genderToggleButton != null)
             genderToggleButton.onClick.RemoveListener(OnGenderToggle);
 
@@ -78,6 +100,8 @@ public class CharacterCreatorUI : MonoBehaviour
             facePrevButton.onClick.RemoveListener(OnFacePrev);
         if (faceNextButton != null)
             faceNextButton.onClick.RemoveListener(OnFaceNext);
+
+        listenersHooked = false;
     }
 
     private void OnGenderToggle()
@@ -153,5 +177,83 @@ public class CharacterCreatorUI : MonoBehaviour
             return $"{label}: {index}/{count}";
 
         return $"{label}: {index}/{count} - {name}";
+    }
+
+    private void NormalizeUiLayoutAndRaycasts()
+    {
+        if (transform.Find("Panel") is RectTransform panel)
+        {
+            panel.anchorMin = new Vector2(0f, 1f);
+            panel.anchorMax = new Vector2(0f, 1f);
+            panel.pivot = new Vector2(0f, 1f);
+            panel.anchoredPosition = Vector2.zero;
+        }
+
+        var texts = GetComponentsInChildren<Text>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            if (texts[i] != null)
+                texts[i].raycastTarget = false;
+        }
+
+        var images = GetComponentsInChildren<Image>(true);
+        for (int i = 0; i < images.Length; i++)
+        {
+            var image = images[i];
+            if (image == null)
+                continue;
+
+            if (image.GetComponent<Button>() != null)
+                continue;
+            if (image.GetComponent<Toggle>() != null)
+                continue;
+            if (image.GetComponent<InputField>() != null)
+                continue;
+
+            image.raycastTarget = false;
+        }
+    }
+
+    private void EnsureSelectionButtonBindings()
+    {
+        hairPrevButton = ResolveButtonReference(hairPrevButton, "Panel/HairRow/HairPrevButton", "HairPrevButton");
+        hairNextButton = ResolveButtonReference(hairNextButton, "Panel/HairRow/HairNextButton", "HairNextButton");
+        facePrevButton = ResolveButtonReference(facePrevButton, "Panel/FaceRow/FacePrevButton", "FacePrevButton");
+        faceNextButton = ResolveButtonReference(faceNextButton, "Panel/FaceRow/FaceNextButton", "FaceNextButton");
+
+        var missing = new List<string>(4);
+        if (hairPrevButton == null) missing.Add(nameof(hairPrevButton));
+        if (hairNextButton == null) missing.Add(nameof(hairNextButton));
+        if (facePrevButton == null) missing.Add(nameof(facePrevButton));
+        if (faceNextButton == null) missing.Add(nameof(faceNextButton));
+
+        if (missing.Count == 0 || warnedMissingSelectionButtons)
+            return;
+
+        warnedMissingSelectionButtons = true;
+        Debug.LogWarning(
+            $"[CharacterCreatorUI] Missing required hair/face button bindings: {string.Join(", ", missing)}.",
+            this
+        );
+    }
+
+    private Button ResolveButtonReference(Button current, string hierarchyPath, string fallbackName)
+    {
+        if (current != null)
+            return current;
+
+        var byPath = transform.Find(hierarchyPath);
+        if (byPath != null && byPath.TryGetComponent<Button>(out var byPathButton))
+            return byPathButton;
+
+        var allButtons = GetComponentsInChildren<Button>(true);
+        for (int i = 0; i < allButtons.Length; i++)
+        {
+            var button = allButtons[i];
+            if (button != null && string.Equals(button.name, fallbackName, StringComparison.OrdinalIgnoreCase))
+                return button;
+        }
+
+        return null;
     }
 }

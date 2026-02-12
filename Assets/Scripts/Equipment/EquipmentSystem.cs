@@ -84,6 +84,12 @@ public class EquipmentSystem : MonoBehaviour
     [SerializeField] private int legsIndex;
     [SerializeField] private int feetIndex;
     [SerializeField] private int weaponIndex;
+    [SerializeField] private int lastHeadIndex;
+    [SerializeField] private int lastBodyIndex;
+    [SerializeField] private int lastHandsIndex;
+    [SerializeField] private int lastLegsIndex;
+    [SerializeField] private int lastFeetIndex;
+    [SerializeField] private int lastWeaponIndex;
 
     [Header("Behavior")]
     [SerializeField] private bool hideBaseBodyOnEquip = true;
@@ -164,6 +170,7 @@ public class EquipmentSystem : MonoBehaviour
     private string pendingLegsKey;
     private string pendingFeetKey;
     private string pendingWeaponKey;
+    private readonly Dictionary<string, string> selectedBaseBodyBySlotToken = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<GameObject> maleBaseBodyInstances = new();
     private readonly List<GameObject> femaleBaseBodyInstances = new();
     private bool indexKeysLoaded;
@@ -231,18 +238,21 @@ public class EquipmentSystem : MonoBehaviour
 
     private void Awake()
     {
+        includeUnequippedOption = true;
+
         EnsureCharacterRoot();
         EnsureRuntimeDataSources();
+        bool usingIndex = UseAddressableIndex();
 
         if (usePrefabCatalog)
             ApplyPrefabCatalog();
-        else if (autoCollectFromScene)
+        else if (autoCollectFromScene && !usingIndex)
             AutoCollectFromScene();
 
-        if (UseAddressableIndex())
+        if (usingIndex)
             ApplyIndexKeys();
 
-        if (!UseAddressableIndex() && loadAddressablesOnAwake && (useAddressablesForEquipment || useAddressablesForWeapons || useAddressablesForBaseBodies))
+        if (!usingIndex && loadAddressablesOnAwake && (useAddressablesForEquipment || useAddressablesForWeapons || useAddressablesForBaseBodies))
             LoadAddressables();
 
         ApplySelection();
@@ -267,18 +277,33 @@ public class EquipmentSystem : MonoBehaviour
 
     private void OnValidate()
     {
+        includeUnequippedOption = true;
         ClampIndices();
     }
 
     private void StartRuntimeCleanupPoll()
     {
-        if (!cleanupSceneObjectsWhenNotUsingSceneLists || !runtimeCleanupPoll)
+        if (!ShouldRunRuntimeCleanupPoll())
             return;
 
         if (runtimeCleanupCoroutine != null)
             StopCoroutine(runtimeCleanupCoroutine);
 
         runtimeCleanupCoroutine = StartCoroutine(RuntimeCleanupPoll());
+    }
+
+    private bool ShouldRunRuntimeCleanupPoll()
+    {
+        if (!cleanupSceneObjectsWhenNotUsingSceneLists || !runtimeCleanupPoll)
+            return false;
+        if (UseAddressableIndex())
+            return false;
+
+        // Polling is only useful while any slot category is scene-list driven.
+        bool usesSceneEquipment = !useAddressablesForEquipment && !usePrefabCatalog;
+        bool usesSceneWeapons = !useAddressablesForWeapons && !usePrefabCatalog;
+        bool usesSceneBaseBodies = manageBaseBodies && !useAddressablesForBaseBodies;
+        return usesSceneEquipment || usesSceneWeapons || usesSceneBaseBodies;
     }
 
     private void StopRuntimeCleanupPoll()
@@ -309,7 +334,7 @@ public class EquipmentSystem : MonoBehaviour
             scanRootsCached = false;
             cachedScanRoots = Array.Empty<Transform>();
 
-            if (autoCollectFromScene && !usePrefabCatalog)
+            if (autoCollectFromScene && !usePrefabCatalog && !UseAddressableIndex())
                 AutoCollectFromScene();
             else
                 CleanupSceneObjectsIfNeeded();
@@ -344,9 +369,10 @@ public class EquipmentSystem : MonoBehaviour
 
     public void SetGender(Gender newGender)
     {
-        if (gender != newGender)
-            gender = newGender;
+        if (gender == newGender)
+            return;
 
+        gender = newGender;
         ApplySelection();
     }
 
@@ -549,6 +575,9 @@ public class EquipmentSystem : MonoBehaviour
             LogActiveSnapshot("After ApplySceneWeapon");
         }
 
+        if (!manageBaseBodies || !hideBaseBodyOnEquip)
+            selectedBaseBodyBySlotToken.Clear();
+
         LogActiveSlotSummary("After ApplySelection");
         Changed?.Invoke();
     }
@@ -645,11 +674,7 @@ public class EquipmentSystem : MonoBehaviour
             ResolveEquipmentRoot()
         );
 
-        UpdateBaseBodyVisibility(Slot.Head, HasSlotSelection(Slot.Head));
-        UpdateBaseBodyVisibility(Slot.Body, HasSlotSelection(Slot.Body));
-        UpdateBaseBodyVisibility(Slot.Hands, HasSlotSelection(Slot.Hands));
-        UpdateBaseBodyVisibility(Slot.Legs, HasSlotSelection(Slot.Legs));
-        UpdateBaseBodyVisibility(Slot.Feet, HasSlotSelection(Slot.Feet));
+        ApplyAllBaseBodySlotVisibility();
     }
 
     private void ApplySceneEquipment()
@@ -660,11 +685,7 @@ public class EquipmentSystem : MonoBehaviour
         ApplyList(GetSceneList(Slot.Legs, gender), legsIndex);
         ApplyList(GetSceneList(Slot.Feet, gender), feetIndex);
 
-        UpdateBaseBodyVisibility(Slot.Head, HasSlotSelection(Slot.Head));
-        UpdateBaseBodyVisibility(Slot.Body, HasSlotSelection(Slot.Body));
-        UpdateBaseBodyVisibility(Slot.Hands, HasSlotSelection(Slot.Hands));
-        UpdateBaseBodyVisibility(Slot.Legs, HasSlotSelection(Slot.Legs));
-        UpdateBaseBodyVisibility(Slot.Feet, HasSlotSelection(Slot.Feet));
+        ApplyAllBaseBodySlotVisibility();
     }
 
     private void ApplyBaseBodies()
@@ -732,7 +753,7 @@ public class EquipmentSystem : MonoBehaviour
             else
                 active = false;
 
-            SetInstanceActive(instance, active);
+            SetItemActiveWithHierarchy(instance, active);
         }
     }
 
@@ -1096,11 +1117,7 @@ public class EquipmentSystem : MonoBehaviour
         SetInstanceActive(legsInstance, legsPrefab != null);
         SetInstanceActive(feetInstance, feetPrefab != null);
 
-        UpdateBaseBodyVisibility(Slot.Head, headPrefab != null);
-        UpdateBaseBodyVisibility(Slot.Body, bodyPrefab != null);
-        UpdateBaseBodyVisibility(Slot.Hands, handsPrefab != null);
-        UpdateBaseBodyVisibility(Slot.Legs, legsPrefab != null);
-        UpdateBaseBodyVisibility(Slot.Feet, feetPrefab != null);
+        ApplyAllBaseBodySlotVisibility();
     }
 
     private void ApplyCatalogWeapon()
@@ -1163,6 +1180,54 @@ public class EquipmentSystem : MonoBehaviour
     }
 
     public bool IsSlotEquipped(Slot slot) => HasSlotSelection(slot);
+    public bool IsSlotEnabled(Slot slot) => HasSlotSelection(slot);
+
+    public void ToggleSlotEnabled(Slot slot)
+    {
+        SetSlotEnabled(slot, !IsSlotEnabled(slot));
+    }
+
+    public void SetSlotEnabled(Slot slot, bool enabled)
+    {
+        int count = GetSlotCount(slot);
+        if (count <= 0)
+        {
+            SetSlotIndex(slot, -1);
+            ApplySelection();
+            return;
+        }
+
+        int current = GetSlotIndex(slot);
+        if (enabled)
+        {
+            if (current >= 0)
+                return;
+
+            int restore = ClampIndex(GetLastEquippedIndex(slot), count, includeNone: false);
+            if (restore < 0)
+                restore = 0;
+            SetSlotIndex(slot, restore);
+        }
+        else
+        {
+            if (current >= 0)
+                SetLastEquippedIndex(slot, current);
+            SetSlotIndex(slot, -1);
+        }
+
+        ApplySelection();
+    }
+
+    public string GetSelectedBaseBodyName(Slot slot)
+    {
+        string token = GetSlotToken(slot);
+        if (string.IsNullOrWhiteSpace(token))
+            return string.Empty;
+
+        return selectedBaseBodyBySlotToken.TryGetValue(token, out var selected)
+            ? selected ?? string.Empty
+            : string.Empty;
+    }
 
     private void UpdateBaseBodyVisibility(Slot slot, bool hasEquipment)
     {
@@ -1183,8 +1248,23 @@ public class EquipmentSystem : MonoBehaviour
         SetBaseBodySlotActive(slotToken, !hasEquipment);
     }
 
+    private void ApplyAllBaseBodySlotVisibility()
+    {
+        UpdateBaseBodyVisibility(Slot.Head, HasSlotSelection(Slot.Head));
+        UpdateBaseBodyVisibility(Slot.Body, HasSlotSelection(Slot.Body));
+        UpdateBaseBodyVisibility(Slot.Hands, HasSlotSelection(Slot.Hands));
+        UpdateBaseBodyVisibility(Slot.Legs, HasSlotSelection(Slot.Legs));
+        UpdateBaseBodyVisibility(Slot.Feet, HasSlotSelection(Slot.Feet));
+    }
+
     private void SetBaseBodySlotActive(string slotToken, bool active)
     {
+        if (useAddressablesForBaseBodies)
+        {
+            SetAddressableBaseBodySlotActive(slotToken, active);
+            return;
+        }
+
         EnsureCharacterRoot();
         var roots = new List<Transform>(4);
         var equipmentRoot = ResolveEquipmentRoot();
@@ -1208,8 +1288,10 @@ public class EquipmentSystem : MonoBehaviour
         var instanceLookup = new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
         CacheBaseBodyInstances(instanceLookup, maleBaseBodyInstances);
         CacheBaseBodyInstances(instanceLookup, femaleBaseBodyInstances);
+        var candidateSet = new HashSet<GameObject>();
+        var candidates = new List<GameObject>();
 
-        int matchCount = 0;
+        int toggledCount = 0;
         int rootsWithMatches = 0;
         bool captureSamples = logSceneCleanup || logToFile;
         var sample = captureSamples ? new List<string>(5) : null;
@@ -1231,11 +1313,12 @@ public class EquipmentSystem : MonoBehaviour
                     continue;
 
                 string name = go.name;
-        if (instanceLookup.TryGetValue(name, out var instance))
-        {
-            go = instance;
-            name = go.name;
-        }
+                if (instanceLookup.TryGetValue(name, out var instance))
+                {
+                    go = instance;
+                    name = go.name;
+                }
+
                 if (!MatchesToken(name, equipmentBaseToken))
                     continue;
                 if (!MatchesToken(name, slotToken))
@@ -1243,28 +1326,164 @@ public class EquipmentSystem : MonoBehaviour
                 if (!MatchesCurrentGender(name))
                     continue;
 
-                if (go.activeSelf != active)
-                {
-                    go.SetActive(active);
-                    matchCount++;
-                    rootMatches++;
-                    if (sample != null && sample.Count < 5)
-                        sample.Add($"{name} (Root='{root.name}')");
-                }
+                if (!candidateSet.Add(go))
+                    continue;
+
+                candidates.Add(go);
+                rootMatches++;
             }
 
             if (rootMatches > 0)
                 rootsWithMatches++;
         }
 
+        GameObject selected = active ? SelectPreferredBaseBodyCandidate(candidates, slotToken) : null;
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            var candidate = candidates[i];
+            if (candidate == null)
+                continue;
+
+            bool shouldBeActive = active && candidate == selected;
+            if (candidate.activeSelf == shouldBeActive)
+                continue;
+
+            SetItemActiveWithHierarchy(candidate, shouldBeActive);
+            toggledCount++;
+            if (sample != null && sample.Count < 5)
+                sample.Add($"{candidate.name} -> {(shouldBeActive ? "active" : "inactive")}");
+        }
+
+        if (active && selected != null)
+            selectedBaseBodyBySlotToken[slotToken] = selected.name;
+        else
+            selectedBaseBodyBySlotToken.Remove(slotToken);
+
         if (logSceneCleanup || logToFile)
         {
             string rootNames = string.Join(", ", roots.ConvertAll(r => r != null ? r.name : "<null>"));
             string sampleText = sample is { Count: > 0 } ? string.Join(", ", sample) : "<none>";
             LogDiagnostics(
-                $"[EquipmentSystem] SetBaseBodySlotActive token='{slotToken}' active={active} roots={rootNames} matched={matchCount} rootsWithMatches={rootsWithMatches} sample={sampleText}."
+                $"[EquipmentSystem] SetBaseBodySlotActive token='{slotToken}' active={active} selected='{selected?.name ?? "<none>"}' candidates={candidates.Count} toggled={toggledCount} roots={rootNames} rootsWithMatches={rootsWithMatches} sample={sampleText}."
             );
         }
+    }
+
+    private void SetAddressableBaseBodySlotActive(string slotToken, bool active)
+    {
+        var instances = gender == Gender.Male ? maleBaseBodyInstances : femaleBaseBodyInstances;
+        var candidates = new List<GameObject>();
+
+        for (int i = 0; i < instances.Count; i++)
+        {
+            var instance = instances[i];
+            if (instance == null)
+                continue;
+
+            string name = instance.name;
+            if (!MatchesToken(name, equipmentBaseToken))
+                continue;
+            if (!MatchesToken(name, slotToken))
+                continue;
+            if (!MatchesCurrentGender(name))
+                continue;
+
+            candidates.Add(instance);
+        }
+
+        GameObject selected = active ? SelectPreferredBaseBodyCandidate(candidates, slotToken) : null;
+        int toggled = 0;
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            var candidate = candidates[i];
+            bool shouldBeActive = active && candidate == selected;
+            if (candidate != null && candidate.activeSelf != shouldBeActive)
+            {
+                SetItemActiveWithHierarchy(candidate, shouldBeActive);
+                toggled++;
+            }
+        }
+
+        if (active && selected != null)
+            selectedBaseBodyBySlotToken[slotToken] = selected.name;
+        else
+            selectedBaseBodyBySlotToken.Remove(slotToken);
+
+        if (logSceneCleanup || logToFile)
+        {
+            LogDiagnostics(
+                $"[EquipmentSystem] SetAddressableBaseBodySlotActive token='{slotToken}' active={active} selected='{selected?.name ?? "<none>"}' candidates={candidates.Count} toggled={toggled}."
+            );
+        }
+    }
+
+    private GameObject SelectPreferredBaseBodyCandidate(List<GameObject> candidates, string slotToken)
+    {
+        if (candidates == null || candidates.Count == 0)
+            return null;
+
+        string preferredGenderToken = gender == Gender.Male ? maleToken : femaleToken;
+        if (string.IsNullOrWhiteSpace(preferredGenderToken))
+            return null;
+
+        var preferredCandidates = new List<GameObject>(candidates.Count);
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            var candidate = candidates[i];
+            if (candidate == null)
+                continue;
+
+            if (MatchesToken(candidate.name, preferredGenderToken))
+                preferredCandidates.Add(candidate);
+        }
+
+        if (preferredCandidates.Count == 0)
+            return null;
+
+        string exactDefault = $"{preferredGenderToken}{equipmentBaseToken}{slotToken}";
+
+        if (!string.IsNullOrWhiteSpace(exactDefault))
+        {
+            for (int i = 0; i < preferredCandidates.Count; i++)
+            {
+                var candidate = preferredCandidates[i];
+                if (candidate == null)
+                    continue;
+
+                if (string.Equals(candidate.name, exactDefault, StringComparison.OrdinalIgnoreCase))
+                    return candidate;
+            }
+        }
+
+        GameObject best = null;
+        int bestScore = int.MaxValue;
+        string bestName = string.Empty;
+
+        for (int i = 0; i < preferredCandidates.Count; i++)
+        {
+            var candidate = preferredCandidates[i];
+            if (candidate == null)
+                continue;
+
+            string name = candidate.name ?? string.Empty;
+            int score = 0;
+
+            if (!MatchesToken(name, equipmentBaseToken))
+                score += 100;
+            score += name.Length;
+
+            bool better = best == null
+                || score < bestScore
+                || (score == bestScore && string.Compare(name, bestName, StringComparison.OrdinalIgnoreCase) < 0);
+            if (!better)
+                continue;
+
+            best = candidate;
+            bestScore = score;
+            bestName = name;
+        }
+
+        return best;
     }
 
     private static void CacheBaseBodyInstances(Dictionary<string, GameObject> lookup, List<GameObject> instances)
@@ -1450,6 +1669,7 @@ public class EquipmentSystem : MonoBehaviour
 
             instances.Add(instance);
             ApplyBaseBodyActivation(forGender);
+            ApplyAllBaseBodySlotVisibility();
         };
 #endif
     }
@@ -1969,6 +2189,7 @@ public class EquipmentSystem : MonoBehaviour
         ClearEquipmentKeys();
         weaponKeys.Clear();
         ClearBaseBodyKeys();
+        selectedBaseBodyBySlotToken.Clear();
     }
 
     private void StepSlot(Slot slot, int delta)
@@ -1987,6 +2208,12 @@ public class EquipmentSystem : MonoBehaviour
         legsIndex = ClampIndex(legsIndex, GetSlotCount(Slot.Legs), includeUnequippedOption);
         feetIndex = ClampIndex(feetIndex, GetSlotCount(Slot.Feet), includeUnequippedOption);
         weaponIndex = ClampIndex(weaponIndex, GetSlotCount(Slot.Weapon), includeUnequippedOption);
+        lastHeadIndex = ClampIndex(lastHeadIndex, GetSlotCount(Slot.Head), includeNone: false);
+        lastBodyIndex = ClampIndex(lastBodyIndex, GetSlotCount(Slot.Body), includeNone: false);
+        lastHandsIndex = ClampIndex(lastHandsIndex, GetSlotCount(Slot.Hands), includeNone: false);
+        lastLegsIndex = ClampIndex(lastLegsIndex, GetSlotCount(Slot.Legs), includeNone: false);
+        lastFeetIndex = ClampIndex(lastFeetIndex, GetSlotCount(Slot.Feet), includeNone: false);
+        lastWeaponIndex = ClampIndex(lastWeaponIndex, GetSlotCount(Slot.Weapon), includeNone: false);
     }
 
     private Transform ResolveEquipmentRoot()
@@ -2059,21 +2286,72 @@ public class EquipmentSystem : MonoBehaviour
         {
             case Slot.Head:
                 headIndex = index;
+                if (index >= 0)
+                    lastHeadIndex = index;
                 break;
             case Slot.Body:
                 bodyIndex = index;
+                if (index >= 0)
+                    lastBodyIndex = index;
                 break;
             case Slot.Hands:
                 handsIndex = index;
+                if (index >= 0)
+                    lastHandsIndex = index;
                 break;
             case Slot.Legs:
                 legsIndex = index;
+                if (index >= 0)
+                    lastLegsIndex = index;
                 break;
             case Slot.Feet:
                 feetIndex = index;
+                if (index >= 0)
+                    lastFeetIndex = index;
                 break;
             case Slot.Weapon:
                 weaponIndex = index;
+                if (index >= 0)
+                    lastWeaponIndex = index;
+                break;
+        }
+    }
+
+    private int GetLastEquippedIndex(Slot slot)
+    {
+        return slot switch
+        {
+            Slot.Head => lastHeadIndex,
+            Slot.Body => lastBodyIndex,
+            Slot.Hands => lastHandsIndex,
+            Slot.Legs => lastLegsIndex,
+            Slot.Feet => lastFeetIndex,
+            Slot.Weapon => lastWeaponIndex,
+            _ => 0
+        };
+    }
+
+    private void SetLastEquippedIndex(Slot slot, int index)
+    {
+        switch (slot)
+        {
+            case Slot.Head:
+                lastHeadIndex = index;
+                break;
+            case Slot.Body:
+                lastBodyIndex = index;
+                break;
+            case Slot.Hands:
+                lastHandsIndex = index;
+                break;
+            case Slot.Legs:
+                lastLegsIndex = index;
+                break;
+            case Slot.Feet:
+                lastFeetIndex = index;
+                break;
+            case Slot.Weapon:
+                lastWeaponIndex = index;
                 break;
         }
     }

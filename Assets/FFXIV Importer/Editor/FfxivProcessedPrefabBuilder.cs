@@ -57,6 +57,11 @@ public static class FfxivProcessedPrefabBuilder
     [MenuItem("Tools/FFXIV/Processed Prefabs/Build (Use Last Source)")]
     public static void BuildUsingLastSource()
     {
+        BuildUsingLastSource(throwOnCancel: false);
+    }
+
+    public static void BuildUsingLastSource(bool throwOnCancel)
+    {
         VerboseLogging = EditorPrefs.GetBool(VerboseLoggingKey, false);
         SkipUnchanged = EditorPrefs.GetBool(SkipUnchangedKey, true);
         string sourceRoot = EditorPrefs.GetString(SourceRootKey, DefaultSourceRoot);
@@ -66,7 +71,7 @@ public static class FfxivProcessedPrefabBuilder
             return;
         }
 
-        BuildFromSourceRoot(sourceRoot);
+        BuildFromSourceRoot(sourceRoot, throwOnCancel);
     }
 
     [MenuItem("Tools/FFXIV/Processed Prefabs/Build (From Source Root)")]
@@ -84,7 +89,7 @@ public static class FfxivProcessedPrefabBuilder
         BuildFromSourceRoot(sourceRoot);
     }
 
-    public static void BuildFromSourceRoot(string sourceRoot)
+    public static void BuildFromSourceRoot(string sourceRoot, bool throwOnCancel = false)
     {
         VerboseLogging = EditorPrefs.GetBool(VerboseLoggingKey, false);
         SkipUnchanged = EditorPrefs.GetBool(SkipUnchangedKey, true);
@@ -172,7 +177,11 @@ public static class FfxivProcessedPrefabBuilder
                     Debug.Log($"[FFXIV] Processed FBXs {i + 1}/{fbxTotal}");
 
                 string fbxEta = EstimateEta(fbxStart, i + 1, fbxTotal);
-                EditorUtility.DisplayProgressBar("FFXIV Processed Prefabs", $"Processing FBX {i + 1}/{fbxTotal} {fbxEta}", fbxTotal == 0 ? 1f : (i + 1f) / fbxTotal);
+                ThrowIfProgressCanceled(
+                    "FFXIV Processed Prefabs",
+                    $"Processing FBX {i + 1}/{fbxTotal} {fbxEta}",
+                    fbxTotal == 0 ? 1f : (i + 1f) / fbxTotal
+                );
             }
 
             EditorUtility.ClearProgressBar();
@@ -217,6 +226,17 @@ public static class FfxivProcessedPrefabBuilder
 
             if (processed == 0)
                 Debug.LogWarning("[FFXIV] No FBXs were processed. Check the Console for errors and ensure the source root contains .fbx files.");
+        }
+        catch (OperationCanceledException)
+        {
+            Debug.LogWarning("[FFXIV] Processed prefab build canceled by user.");
+            if (!throwOnCancel)
+            {
+                EditorUtility.DisplayDialog("FFXIV Processed Prefabs", "Build canceled by user.", "OK");
+                return;
+            }
+
+            throw;
         }
         finally
         {
@@ -449,7 +469,11 @@ public static class FfxivProcessedPrefabBuilder
                     Debug.Log($"[FFXIV] Scanning source {processedAssets}/{totalSourceAssets}");
 
                 string scanEta = EstimateEta(scanStart, processedAssets, totalSourceAssets);
-                EditorUtility.DisplayProgressBar("FFXIV Processed Prefabs", $"Scanning source {processedAssets}/{totalSourceAssets} {scanEta}", totalSourceAssets == 0 ? 1f : processedAssets / (float)totalSourceAssets);
+                ThrowIfProgressCanceled(
+                    "FFXIV Processed Prefabs",
+                    $"Scanning source {processedAssets}/{totalSourceAssets} {scanEta}",
+                    totalSourceAssets == 0 ? 1f : processedAssets / (float)totalSourceAssets
+                );
 
                 string rel = NormalizeSourceRelativePath(src, sourceRoot);
                 if (string.IsNullOrEmpty(rel))
@@ -902,5 +926,11 @@ public static class FfxivProcessedPrefabBuilder
 
         string assetsAbs = Application.dataPath.Replace("\\", "/");
         return assetsAbs + path.Substring("Assets".Length);
+    }
+
+    private static void ThrowIfProgressCanceled(string title, string message, float progress)
+    {
+        if (EditorUtility.DisplayCancelableProgressBar(title, message, Mathf.Clamp01(progress)))
+            throw new OperationCanceledException();
     }
 }

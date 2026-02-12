@@ -34,7 +34,7 @@ public static class FfxivValidationRunner
         try
         {
             ThrowIfCanceled(startUtc, 0, totalSteps, "Building processed prefabs");
-            FfxivProcessedPrefabBuilder.BuildUsingLastSource();
+            FfxivProcessedPrefabBuilder.BuildUsingLastSource(throwOnCancel: true);
 
             ThrowIfCanceled(startUtc, 1, totalSteps, "Configuring Addressables groups");
             FfxivAddressablesConfigurator.SetupGroups(showDialog: false);
@@ -147,6 +147,16 @@ public static class FfxivValidationRunner
             issues.Add("Missing prefab catalog asset at Assets/Resources/FfxivPrefabCatalog.asset.");
             return;
         }
+
+        ValidateRequiredNonEmptyKeys(runtime.maleHair, "runtime.maleHair", issues);
+        ValidateRequiredNonEmptyKeys(runtime.femaleHair, "runtime.femaleHair", issues);
+        ValidateRequiredNonEmptyKeys(runtime.maleFace, "runtime.maleFace", issues);
+        ValidateRequiredNonEmptyKeys(runtime.femaleFace, "runtime.femaleFace", issues);
+
+        ValidateRequiredNonEmptyKeys(index.maleHair, "index.maleHair", issues);
+        ValidateRequiredNonEmptyKeys(index.femaleHair, "index.femaleHair", issues);
+        ValidateRequiredNonEmptyKeys(index.maleFace, "index.maleFace", issues);
+        ValidateRequiredNonEmptyKeys(index.femaleFace, "index.femaleFace", issues);
 
         CompareCounts("maleHair", runtime.maleHair.Count, index.maleHair.Count, issues);
         CompareCounts("femaleHair", runtime.femaleHair.Count, index.femaleHair.Count, issues);
@@ -271,6 +281,12 @@ public static class FfxivValidationRunner
             if (prefabs[i] == null)
                 issues.Add($"{label} contains null prefab reference at index {i}.");
         }
+    }
+
+    private static void ValidateRequiredNonEmptyKeys(List<string> values, string label, List<string> issues)
+    {
+        if (values == null || values.Count == 0)
+            issues.Add($"{label} must contain at least one key.");
     }
 
     private static int ScanForFbx(DateTime startUtc, int stepIndex, int totalSteps, out List<string> samplePaths)

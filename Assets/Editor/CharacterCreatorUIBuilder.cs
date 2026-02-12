@@ -64,11 +64,16 @@ public static class CharacterCreatorUIBuilder
         panel.transform.SetParent(root.transform, false);
 
         var panelRect = panel.GetComponent<RectTransform>();
+        panelRect.anchorMin = new Vector2(0f, 1f);
+        panelRect.anchorMax = new Vector2(0f, 1f);
+        panelRect.pivot = new Vector2(0f, 1f);
+        panelRect.anchoredPosition = Vector2.zero;
         panelRect.sizeDelta = new Vector2(360f, 0f);
 
         var panelImage = panel.GetComponent<Image>();
         ApplySprite(panelImage, backgroundSprite);
         panelImage.color = new Color(0f, 0f, 0f, 0.6f);
+        panelImage.raycastTarget = false;
 
         var panelLayout = panel.GetComponent<VerticalLayoutGroup>();
         panelLayout.padding = new RectOffset(12, 12, 12, 12);
@@ -159,18 +164,6 @@ public static class CharacterCreatorUIBuilder
         if (uiRoot != null)
             Undo.DestroyObjectImmediate(uiRoot);
 
-        var creator = GameObject.Find("CharacterCreator");
-        if (creator != null)
-            Undo.DestroyObjectImmediate(creator);
-
-        var eventSystem = GameObject.Find("EventSystem");
-        if (eventSystem != null)
-            Undo.DestroyObjectImmediate(eventSystem);
-
-        var canvas = GameObject.Find("Canvas");
-        if (canvas != null)
-            Undo.DestroyObjectImmediate(canvas);
-
         Undo.CollapseUndoOperations(group);
     }
 
@@ -213,6 +206,7 @@ public static class CharacterCreatorUIBuilder
         label.alignment = anchor;
         label.color = Color.white;
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        label.raycastTarget = false;
 
         return label;
     }
