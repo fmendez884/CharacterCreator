@@ -207,6 +207,7 @@ public class EquipmentSystem : MonoBehaviour
     }
 
     public string GetCurrentItemName(Slot slot) => GetItemName(GetSlotNames(slot, gender), GetSlotIndex(slot));
+    public string GetSelectedKey(Slot slot) => GetCurrentItemName(slot);
 
     public void SetManageBaseBodies(bool enabled)
     {
@@ -367,13 +368,68 @@ public class EquipmentSystem : MonoBehaviour
             Debug.Log($"[EquipmentSystem] Scan root cache invalidated ({reason}).", this);
     }
 
-    public void SetGender(Gender newGender)
+    public void SetGender(Gender newGender, bool applySelection = true)
     {
         if (gender == newGender)
             return;
 
         gender = newGender;
-        ApplySelection();
+        if (applySelection)
+            ApplySelection();
+    }
+
+    public bool SetSlotByKey(Slot slot, string key, bool applySelection = true)
+    {
+        EnsureRuntimeReady();
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            SetSlotIndex(slot, -1);
+            if (applySelection)
+                ApplySelection();
+            return true;
+        }
+
+        var names = GetSlotNames(slot, gender);
+        int resolvedIndex = -1;
+        for (int i = 0; i < names.Count; i++)
+        {
+            if (string.Equals(names[i], key, StringComparison.OrdinalIgnoreCase))
+            {
+                resolvedIndex = i;
+                break;
+            }
+        }
+
+        if (resolvedIndex < 0)
+            return false;
+
+        SetSlotIndex(slot, resolvedIndex);
+        if (applySelection)
+            ApplySelection();
+        return true;
+    }
+
+    public void EnsureRuntimeReady()
+    {
+        EnsureRuntimeDataSources();
+        if (UseAddressableIndex())
+        {
+            ApplyIndexKeys();
+            return;
+        }
+
+        if (useAddressablesForEquipment)
+            TryEnsureEquipmentKeys();
+        if (useAddressablesForWeapons)
+            TryEnsureWeaponKeys();
+        if (manageBaseBodies && useAddressablesForBaseBodies)
+            TryEnsureBaseBodyKeys();
+    }
+
+    public void ApplyCurrentSelection(bool invokeChanged = true)
+    {
+        ApplySelection(invokeChanged);
     }
 
     public void NextSlot(Slot slot)
@@ -512,7 +568,7 @@ public class EquipmentSystem : MonoBehaviour
 #endif
     }
 
-    private void ApplySelection()
+    private void ApplySelection(bool invokeChanged = true)
     {
         EnsureCharacterRoot();
         ClampIndices();
@@ -579,7 +635,8 @@ public class EquipmentSystem : MonoBehaviour
             selectedBaseBodyBySlotToken.Clear();
 
         LogActiveSlotSummary("After ApplySelection");
-        Changed?.Invoke();
+        if (invokeChanged)
+            Changed?.Invoke();
     }
 
     private void ShowAllBaseBodySlots()
@@ -1187,13 +1244,14 @@ public class EquipmentSystem : MonoBehaviour
         SetSlotEnabled(slot, !IsSlotEnabled(slot));
     }
 
-    public void SetSlotEnabled(Slot slot, bool enabled)
+    public void SetSlotEnabled(Slot slot, bool enabled, bool applySelection = true)
     {
         int count = GetSlotCount(slot);
         if (count <= 0)
         {
             SetSlotIndex(slot, -1);
-            ApplySelection();
+            if (applySelection)
+                ApplySelection();
             return;
         }
 
@@ -1215,7 +1273,8 @@ public class EquipmentSystem : MonoBehaviour
             SetSlotIndex(slot, -1);
         }
 
-        ApplySelection();
+        if (applySelection)
+            ApplySelection();
     }
 
     public string GetSelectedBaseBodyName(Slot slot)

@@ -1,0 +1,20 @@
+{
+  "name": "Ffxiv.CharacterCreator.Importer.Editor",
+  "rootNamespace": "Ffxiv.CharacterCreator.Editor",
+  "references": [
+    "Ffxiv.CharacterCreator.Runtime",
+    "Ffxiv.CharacterCreator.FbxImporter.Editor",
+    "Unity.Addressables.Editor"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

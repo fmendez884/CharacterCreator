@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
@@ -202,12 +203,12 @@ public static class FfxivProcessedPrefabBuilder
                 addressablesUpdated = true;
             }
 
-            runtimeCatalogBuilt = FfxivRuntimeCatalogBuilder.BuildCatalog(showDialog: false);
+            runtimeCatalogBuilt = InvokeEditorBoolBuilder("FfxivRuntimeCatalogBuilder", "BuildCatalog", false);
 
             if (autoBuildAddressableIndex)
             {
-                indexBuilt = FfxivAddressableIndexBuilder.BuildIndex(showDialog: false);
-                prefabCatalogBuilt = FfxivPrefabCatalogBuilder.BuildCatalog(showDialog: false);
+                indexBuilt = InvokeEditorBoolBuilder("FfxivAddressableIndexBuilder", "BuildIndex", false);
+                prefabCatalogBuilt = InvokeEditorBoolBuilder("FfxivPrefabCatalogBuilder", "BuildCatalog", false);
             }
 
             if (cleanupStaging)
@@ -926,6 +927,87 @@ public static class FfxivProcessedPrefabBuilder
 
         string assetsAbs = Application.dataPath.Replace("\\", "/");
         return assetsAbs + path.Substring("Assets".Length);
+    }
+
+    private static bool InvokeEditorBoolBuilder(string typeName, string methodName, bool showDialog)
+    {
+        var type = FindTypeByName(typeName);
+        if (type == null)
+        {
+            Debug.LogError($"[FFXIV] Could not find editor builder type '{typeName}'.");
+            return false;
+        }
+
+        MethodInfo method = type.GetMethod(
+            methodName,
+            BindingFlags.Public | BindingFlags.Static,
+            binder: null,
+            types: new[] { typeof(bool) },
+            modifiers: null
+        );
+
+        if (method == null)
+        {
+            Debug.LogError($"[FFXIV] Could not find method '{typeName}.{methodName}(bool)'.");
+            return false;
+        }
+
+        try
+        {
+            object result = method.Invoke(null, new object[] { showDialog });
+            if (result is bool boolResult)
+                return boolResult;
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[FFXIV] Failed invoking '{typeName}.{methodName}': {ex.Message}");
+            return false;
+        }
+    }
+
+    private static Type FindTypeByName(string typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName))
+            return null;
+
+        var direct = Type.GetType(typeName);
+        if (direct != null)
+            return direct;
+
+        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+        for (int i = 0; i < assemblies.Length; i++)
+        {
+            var assembly = assemblies[i];
+            var type = assembly.GetType(typeName);
+            if (type != null)
+                return type;
+
+            Type[] allTypes;
+            try
+            {
+                allTypes = assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                allTypes = ex.Types;
+            }
+
+            if (allTypes == null)
+                continue;
+
+            for (int t = 0; t < allTypes.Length; t++)
+            {
+                var candidate = allTypes[t];
+                if (candidate == null)
+                    continue;
+                if (string.Equals(candidate.Name, typeName, StringComparison.Ordinal))
+                    return candidate;
+            }
+        }
+
+        return null;
     }
 
     private static void ThrowIfProgressCanceled(string title, string message, float progress)

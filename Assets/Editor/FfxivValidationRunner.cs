@@ -29,7 +29,7 @@ public static class FfxivValidationRunner
 
         var issues = new List<string>();
         var startUtc = DateTime.UtcNow;
-        const int totalSteps = 8;
+        const int totalSteps = 9;
 
         try
         {
@@ -55,11 +55,14 @@ public static class FfxivValidationRunner
             if (!CharacterCreatorSceneBuilder.ValidateScene(showDialog: false))
                 issues.Add("CharacterCreator scene validation failed.");
 
-            ThrowIfCanceled(startUtc, 6, totalSteps, "Validating catalog parity and integrity");
+            ThrowIfCanceled(startUtc, 6, totalSteps, "Validating preset schema and portable wiring");
+            ValidatePresetSchemaAndPortableWiring(issues);
+
+            ThrowIfCanceled(startUtc, 7, totalSteps, "Validating catalog parity and integrity");
             ValidateCatalogParity(issues);
 
-            ThrowIfCanceled(startUtc, 7, totalSteps, "Scanning Assets for FBX files");
-            int fbxCount = ScanForFbx(startUtc, 7, totalSteps, out List<string> samplePaths);
+            ThrowIfCanceled(startUtc, 8, totalSteps, "Scanning Assets for FBX files");
+            int fbxCount = ScanForFbx(startUtc, 8, totalSteps, out List<string> samplePaths);
             if (fbxCount > 0)
             {
                 issues.Add($"Found {fbxCount} .fbx files under Assets.");
@@ -232,6 +235,79 @@ public static class FfxivValidationRunner
             string.IsNullOrWhiteSpace(runtime.labelBody))
         {
             issues.Add("Runtime catalog labels are not fully configured.");
+        }
+    }
+
+    private static void ValidatePresetSchemaAndPortableWiring(List<string> issues)
+    {
+        ValidatePresetSchema(issues);
+        const string verticalSliceScenePath = "Assets/Scenes/CharacterVerticalSlice.unity";
+        if (File.Exists(verticalSliceScenePath) && !CharacterVerticalSliceSceneBuilder.Validate(showDialog: false))
+            issues.Add("CharacterVerticalSlice scene validation failed.");
+        ValidatePortableWiring(issues);
+    }
+
+    private static void ValidatePresetSchema(List<string> issues)
+    {
+        if (CharacterPresetData.CurrentVersion <= 0)
+            issues.Add("CharacterPresetData.CurrentVersion must be > 0.");
+
+        var required = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Head", "Body", "Hands", "Legs", "Feet", "Weapon"
+        };
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < CharacterPresetData.KnownSlots.Length; i++)
+        {
+            string slot = CharacterPresetData.KnownSlots[i];
+            if (string.IsNullOrWhiteSpace(slot))
+            {
+                issues.Add($"CharacterPresetData.KnownSlots contains empty value at index {i}.");
+                continue;
+            }
+
+            if (!seen.Add(slot))
+                issues.Add($"CharacterPresetData.KnownSlots contains duplicate slot '{slot}'.");
+        }
+
+        foreach (var slot in required)
+        {
+            if (!seen.Contains(slot))
+                issues.Add($"CharacterPresetData.KnownSlots is missing required slot '{slot}'.");
+        }
+    }
+
+    private static void ValidatePortableWiring(List<string> issues)
+    {
+        var facades = UnityEngine.Object.FindObjectsOfType<CharacterCustomizationFacade>(true);
+        for (int i = 0; i < facades.Length; i++)
+        {
+            var so = new SerializedObject(facades[i]);
+            if (so.FindProperty("characterCreator").objectReferenceValue == null)
+                issues.Add("CharacterCustomizationFacade.characterCreator is not wired.");
+            if (so.FindProperty("equipmentSystem").objectReferenceValue == null)
+                issues.Add("CharacterCustomizationFacade.equipmentSystem is not wired.");
+        }
+
+        var mounts = UnityEngine.Object.FindObjectsOfType<CharacterAvatarMount>(true);
+        for (int i = 0; i < mounts.Length; i++)
+        {
+            var so = new SerializedObject(mounts[i]);
+            if (so.FindProperty("characterCreator").objectReferenceValue == null)
+                issues.Add("CharacterAvatarMount.characterCreator is not wired.");
+            if (so.FindProperty("equipmentSystem").objectReferenceValue == null)
+                issues.Add("CharacterAvatarMount.equipmentSystem is not wired.");
+            if (so.FindProperty("hostAdapter").objectReferenceValue == null)
+                issues.Add("CharacterAvatarMount.hostAdapter is not wired.");
+        }
+
+        var hosts = UnityEngine.Object.FindObjectsOfType<CharacterControllerAvatarHost>(true);
+        for (int i = 0; i < hosts.Length; i++)
+        {
+            var so = new SerializedObject(hosts[i]);
+            if (so.FindProperty("avatarAnchor").objectReferenceValue == null)
+                issues.Add("CharacterControllerAvatarHost.avatarAnchor is not wired.");
         }
     }
 

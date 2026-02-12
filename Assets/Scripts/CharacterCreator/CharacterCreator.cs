@@ -169,6 +169,8 @@ public class CharacterCreator : MonoBehaviour
 
     public string GetCurrentHairName() => GetItemName(GetOptionNames(Category.Hair, gender), CurrentHairIndex);
     public string GetCurrentFaceName() => GetItemName(GetOptionNames(Category.Face, gender), CurrentFaceIndex);
+    public string GetCurrentHairKey() => GetCurrentHairName();
+    public string GetCurrentFaceKey() => GetCurrentFaceName();
     public string GetCurrentOptionName() => GetItemName(GetOptionNames(category, gender), GetOptionIndex(category, gender));
 
     public int GetFilteredCount(Category forCategory) =>
@@ -298,12 +300,13 @@ public class CharacterCreator : MonoBehaviour
         runtimeCleanupCoroutine = null;
     }
 
-    public void SetGender(Gender newGender)
+    public void SetGender(Gender newGender, bool applySelection = true)
     {
         if (gender != newGender)
             gender = newGender;
 
-        ApplySelection();
+        if (applySelection)
+            ApplySelection();
     }
 
     public void SetCategory(Category newCategory)
@@ -361,18 +364,50 @@ public class CharacterCreator : MonoBehaviour
         ApplySelection();
     }
 
-    public void SetHairIndex(int index)
+    public void SetHairIndex(int index, bool applySelection = true)
     {
         SetOptionIndexForCurrentGender(Category.Hair, index);
 
-        ApplySelection();
+        if (applySelection)
+            ApplySelection();
     }
 
-    public void SetFaceIndex(int index)
+    public void SetFaceIndex(int index, bool applySelection = true)
     {
         SetOptionIndexForCurrentGender(Category.Face, index);
 
-        ApplySelection();
+        if (applySelection)
+            ApplySelection();
+    }
+
+    public bool SetHairByKey(string key, bool applySelection = true)
+    {
+        return SetOptionByKey(Category.Hair, gender, key, applySelection);
+    }
+
+    public bool SetFaceByKey(string key, bool applySelection = true)
+    {
+        return SetOptionByKey(Category.Face, gender, key, applySelection);
+    }
+
+    public void EnsureRuntimeReady()
+    {
+        EnsureRuntimeDataSources();
+        if (UseAddressableIndex())
+        {
+            EnsureIndexModeHairFaceReady();
+            return;
+        }
+
+        if (useAddressablesForHairFace)
+            TryEnsureAddressableKeys();
+        if (manageBaseBodies && useAddressablesForBodies)
+            TryEnsureBodyAddressableKeys();
+    }
+
+    public void ApplyCurrentSelection(bool invokeChanged = true)
+    {
+        ApplySelection(invokeChanged);
     }
 
     public void NextHair()
@@ -544,7 +579,7 @@ public class CharacterCreator : MonoBehaviour
 #endif
     }
 
-    private void ApplySelection()
+    private void ApplySelection(bool invokeChanged = true)
     {
         EnsureCharacterRoot();
         ClampIndices();
@@ -621,7 +656,8 @@ public class CharacterCreator : MonoBehaviour
         ApplyHairVisibilityOverride();
         LogActiveSnapshot("After ApplyHairVisibilityOverride");
 
-        Changed?.Invoke();
+        if (invokeChanged)
+            Changed?.Invoke();
     }
 
     private void InstantiateCatalogSelection()
@@ -2739,6 +2775,39 @@ public class CharacterCreator : MonoBehaviour
 
     private int GetOptionIndex(Category forCategory, Gender forGender) =>
         forCategory == Category.Hair ? GetHairIndex(forGender) : GetFaceIndex(forGender);
+
+    private bool SetOptionByKey(Category forCategory, Gender forGender, string key, bool applySelection)
+    {
+        EnsureRuntimeReady();
+
+        var options = GetOptionNames(forCategory, forGender);
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            SetOptionIndex(forCategory, forGender, -1);
+            if (applySelection)
+                ApplySelection();
+            return true;
+        }
+
+        int resolvedIndex = -1;
+        for (int i = 0; i < options.Count; i++)
+        {
+            string option = options[i];
+            if (string.Equals(option, key, StringComparison.OrdinalIgnoreCase))
+            {
+                resolvedIndex = i;
+                break;
+            }
+        }
+
+        if (resolvedIndex < 0)
+            return false;
+
+        SetOptionIndex(forCategory, forGender, resolvedIndex);
+        if (applySelection)
+            ApplySelection();
+        return true;
+    }
 
     private void SetOptionIndexForCurrentGender(Category forCategory, int index)
     {
