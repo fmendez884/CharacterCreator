@@ -112,6 +112,7 @@ public class CharacterCreator : MonoBehaviour
     [SerializeField] private string bodyBaseToken = "e0000";
 
     [Header("Addressable Index")]
+    [SerializeField] private FfxivRuntimeCatalog runtimeCatalog;
     [SerializeField] private ScriptableObject addressableIndex;
     [SerializeField] private bool useAddressableIndex = true;
 
@@ -126,6 +127,9 @@ public class CharacterCreator : MonoBehaviour
     private readonly HashSet<GameObject> hiddenMaleObjects = new();
     private readonly HashSet<GameObject> hiddenFemaleObjects = new();
     private bool indexKeysLoaded;
+    private bool warnedAddressablesNotLoaded;
+    private bool warnedBodyAddressablesNotLoaded;
+    private bool loggedStartupMode;
     private Coroutine runtimeCleanupCoroutine;
     private bool scanRootsCached;
     private Transform[] cachedScanRoots = Array.Empty<Transform>();
@@ -141,6 +145,10 @@ public class CharacterCreator : MonoBehaviour
     private GameObject maleFaceInstance;
     private GameObject femaleHairInstance;
     private GameObject femaleFaceInstance;
+    private string pendingMaleHairKey;
+    private string pendingMaleFaceKey;
+    private string pendingFemaleHairKey;
+    private string pendingFemaleFaceKey;
     private readonly List<GameObject> maleBodyInstances = new();
     private readonly List<GameObject> femaleBodyInstances = new();
 
@@ -183,13 +191,14 @@ public class CharacterCreator : MonoBehaviour
     private void Awake()
     {
         EnsureCharacterRoot();
+        EnsureRuntimeDataSources();
 
         if (usePrefabCatalog)
             ApplyPrefabCatalog();
         else if (autoCollectFromScene)
             AutoCollectFromScene();
 
-        if (loadAddressablesOnAwake && (useAddressablesForHairFace || (useAddressablesForBodies && manageBaseBodies)))
+        if (!UseAddressableIndex() && loadAddressablesOnAwake && (useAddressablesForHairFace || (useAddressablesForBodies && manageBaseBodies)))
             LoadAddressables();
 
         ApplySelection();
@@ -316,6 +325,19 @@ public class CharacterCreator : MonoBehaviour
     {
         addressableIndex = index;
         indexKeysLoaded = false;
+        warnedAddressablesNotLoaded = false;
+        warnedBodyAddressablesNotLoaded = false;
+        loggedStartupMode = false;
+        ApplySelection();
+    }
+
+    public void SetRuntimeCatalog(FfxivRuntimeCatalog catalog)
+    {
+        runtimeCatalog = catalog;
+        indexKeysLoaded = false;
+        warnedAddressablesNotLoaded = false;
+        warnedBodyAddressablesNotLoaded = false;
+        loggedStartupMode = false;
         ApplySelection();
     }
 
@@ -441,6 +463,9 @@ public class CharacterCreator : MonoBehaviour
     [ContextMenu("Load Addressables (Hair/Face/Body)")]
     public void LoadAddressables()
     {
+        warnedAddressablesNotLoaded = false;
+        warnedBodyAddressablesNotLoaded = false;
+
         if (UseAddressableIndex())
         {
             ApplyIndexKeys();
@@ -1170,16 +1195,56 @@ public class CharacterCreator : MonoBehaviour
 
         if (gender == Gender.Male)
         {
-            SwapAddressableInstance(maleHairInstance, instance => maleHairInstance = instance, hairKey, "Hair");
-            SwapAddressableInstance(maleFaceInstance, instance => maleFaceInstance = instance, faceKey, "Face");
+            SwapAddressableInstance(
+                maleHairInstance,
+                instance => maleHairInstance = instance,
+                () => maleHairInstance,
+                () => GetKeyForGender(Category.Hair, Gender.Male),
+                () => pendingMaleHairKey,
+                value => pendingMaleHairKey = value,
+                hairKey,
+                "Hair",
+                !allowExternalHairVisibilityOverride || hairVisibleOverride
+            );
+            SwapAddressableInstance(
+                maleFaceInstance,
+                instance => maleFaceInstance = instance,
+                () => maleFaceInstance,
+                () => GetKeyForGender(Category.Face, Gender.Male),
+                () => pendingMaleFaceKey,
+                value => pendingMaleFaceKey = value,
+                faceKey,
+                "Face",
+                true
+            );
 
             SetInstanceActive(femaleHairInstance, false);
             SetInstanceActive(femaleFaceInstance, false);
         }
         else
         {
-            SwapAddressableInstance(femaleHairInstance, instance => femaleHairInstance = instance, hairKey, "Hair");
-            SwapAddressableInstance(femaleFaceInstance, instance => femaleFaceInstance = instance, faceKey, "Face");
+            SwapAddressableInstance(
+                femaleHairInstance,
+                instance => femaleHairInstance = instance,
+                () => femaleHairInstance,
+                () => GetKeyForGender(Category.Hair, Gender.Female),
+                () => pendingFemaleHairKey,
+                value => pendingFemaleHairKey = value,
+                hairKey,
+                "Hair",
+                !allowExternalHairVisibilityOverride || hairVisibleOverride
+            );
+            SwapAddressableInstance(
+                femaleFaceInstance,
+                instance => femaleFaceInstance = instance,
+                () => femaleFaceInstance,
+                () => GetKeyForGender(Category.Face, Gender.Female),
+                () => pendingFemaleFaceKey,
+                value => pendingFemaleFaceKey = value,
+                faceKey,
+                "Face",
+                true
+            );
 
             SetInstanceActive(maleHairInstance, false);
             SetInstanceActive(maleFaceInstance, false);
@@ -1266,8 +1331,11 @@ public class CharacterCreator : MonoBehaviour
 
         if (!hairHandleValid && !faceHandleValid)
         {
-            if (logAddressables)
+            if (logAddressables && !warnedAddressablesNotLoaded)
+            {
                 Debug.LogWarning("[CharacterCreator] Addressables not loaded. Call LoadAddressables first.");
+                warnedAddressablesNotLoaded = true;
+            }
             return false;
         }
 
@@ -1300,8 +1368,11 @@ public class CharacterCreator : MonoBehaviour
 
         if (!bodyHandleValid)
         {
-            if (logAddressables)
+            if (logAddressables && !warnedBodyAddressablesNotLoaded)
+            {
                 Debug.LogWarning("[CharacterCreator] Body Addressables not loaded. Call LoadAddressables first.");
+                warnedBodyAddressablesNotLoaded = true;
+            }
             return false;
         }
 
@@ -1322,7 +1393,7 @@ public class CharacterCreator : MonoBehaviour
 
     private bool UseAddressableIndex()
     {
-        return useAddressableIndex && addressableIndex != null;
+        return useAddressableIndex && ResolveDataIndexAsset() != null;
     }
 
     private void ApplyIndexKeys()
@@ -1330,7 +1401,7 @@ public class CharacterCreator : MonoBehaviour
         if (indexKeysLoaded)
             return;
 
-        var index = addressableIndex as ScriptableObject;
+        var index = ResolveDataIndexAsset();
         if (index == null)
             return;
 
@@ -1356,6 +1427,54 @@ public class CharacterCreator : MonoBehaviour
         SortByName(femaleBodyKeys);
 
         indexKeysLoaded = true;
+    }
+
+    private void EnsureRuntimeDataSources()
+    {
+        if (runtimeCatalog == null)
+            runtimeCatalog = Resources.Load<FfxivRuntimeCatalog>("FfxivRuntimeCatalog");
+
+        if (addressableIndex == null)
+            addressableIndex = Resources.Load<FfxivAddressableIndex>("FfxivAddressableIndex");
+
+        if (loggedStartupMode)
+            return;
+
+        bool usingIndex = UseAddressableIndex();
+        bool wantsAddressables = useAddressablesForHairFace || (useAddressablesForBodies && manageBaseBodies);
+
+        if (usingIndex && logAddressables && wantsAddressables)
+        {
+            Debug.Log(
+                "[CharacterCreator] useAddressableIndex is enabled. Async label preload handles are skipped; selection keys come from index/runtime catalog.",
+                this
+            );
+        }
+        else if (!usingIndex && logAddressables && wantsAddressables && !loadAddressablesOnAwake)
+        {
+            Debug.LogWarning(
+                "[CharacterCreator] Addressables are enabled while loadAddressablesOnAwake is disabled. Call LoadAddressables() before changing selections.",
+                this
+            );
+        }
+
+        loggedStartupMode = true;
+    }
+
+    private ScriptableObject ResolveDataIndexAsset()
+    {
+        if (runtimeCatalog != null)
+            return runtimeCatalog;
+
+        if (addressableIndex != null)
+            return addressableIndex;
+
+        runtimeCatalog = Resources.Load<FfxivRuntimeCatalog>("FfxivRuntimeCatalog");
+        if (runtimeCatalog != null)
+            return runtimeCatalog;
+
+        addressableIndex = Resources.Load<FfxivAddressableIndex>("FfxivAddressableIndex");
+        return addressableIndex;
     }
 
     private bool TryCopyIndexList(ScriptableObject index, string fieldName, List<string> target)
@@ -1468,10 +1587,20 @@ public class CharacterCreator : MonoBehaviour
         return list[index];
     }
 
-    private void SwapAddressableInstance(GameObject currentInstance, Action<GameObject> assignInstance, string key, string label)
+    private void SwapAddressableInstance(
+        GameObject currentInstance,
+        Action<GameObject> assignInstance,
+        Func<GameObject> getAssignedInstance,
+        Func<string> getExpectedKey,
+        Func<string> getPendingKey,
+        Action<string> setPendingKey,
+        string key,
+        string label,
+        bool activeWhenAssigned)
     {
         if (string.IsNullOrEmpty(key))
         {
+            setPendingKey?.Invoke(null);
             if (currentInstance != null)
                 currentInstance.SetActive(false);
             return;
@@ -1479,9 +1608,15 @@ public class CharacterCreator : MonoBehaviour
 
         if (currentInstance != null && string.Equals(currentInstance.name, key, StringComparison.OrdinalIgnoreCase))
         {
+            setPendingKey?.Invoke(null);
             currentInstance.SetActive(true);
             return;
         }
+
+        if (string.Equals(getPendingKey?.Invoke(), key, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        setPendingKey?.Invoke(key);
 
 #if ENABLE_ADDRESSABLES
         if (currentInstance != null)
@@ -1492,6 +1627,16 @@ public class CharacterCreator : MonoBehaviour
 
         Addressables.InstantiateAsync(key, characterRoot).Completed += handle =>
         {
+            bool stillPending = string.Equals(getPendingKey?.Invoke(), key, StringComparison.OrdinalIgnoreCase);
+            if (!stillPending)
+            {
+                if (handle.Status == AsyncOperationStatus.Succeeded && handle.Result != null)
+                    Addressables.ReleaseInstance(handle.Result);
+                return;
+            }
+
+            setPendingKey?.Invoke(null);
+
             if (handle.Status != AsyncOperationStatus.Succeeded)
             {
                 if (logAddressables)
@@ -1499,12 +1644,22 @@ public class CharacterCreator : MonoBehaviour
                 return;
             }
 
+            string expectedKey = getExpectedKey?.Invoke();
+            if (!string.Equals(expectedKey, key, StringComparison.OrdinalIgnoreCase))
+            {
+                Addressables.ReleaseInstance(handle.Result);
+                return;
+            }
+
             var instance = handle.Result;
             instance.name = key;
-            instance.SetActive(false);
+
+            var assigned = getAssignedInstance?.Invoke();
+            if (assigned != null && assigned != instance)
+                Addressables.ReleaseInstance(assigned);
+
             assignInstance?.Invoke(instance);
-            if (activateNewInstances)
-                SetInstanceActive(instance, true);
+            SetInstanceActive(instance, activeWhenAssigned);
         };
 #endif
     }
@@ -1546,10 +1701,14 @@ public class CharacterCreator : MonoBehaviour
 
             var instance = handle.Result;
             instance.name = key;
-            instance.SetActive(false);
+            if (gender != forGender)
+            {
+                Addressables.ReleaseInstance(instance);
+                return;
+            }
+
+            instance.SetActive(true);
             instances.Add(instance);
-            if (activateNewInstances)
-                SetInstanceActive(instance, gender == forGender);
         };
 #endif
     }
@@ -1574,6 +1733,10 @@ public class CharacterCreator : MonoBehaviour
         maleFaceInstance = null;
         femaleHairInstance = null;
         femaleFaceInstance = null;
+        pendingMaleHairKey = null;
+        pendingMaleFaceKey = null;
+        pendingFemaleHairKey = null;
+        pendingFemaleFaceKey = null;
 
         if (hairHandleValid && hairLoadHandle.IsValid())
             Addressables.Release(hairLoadHandle);

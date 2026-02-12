@@ -46,8 +46,11 @@ public class EquipmentSelectionUI : MonoBehaviour
             return;
 
         Hookup();
-        equipment.RebuildFromScene();
         equipment.Changed += Refresh;
+
+        if (genderToggleButton != null)
+            genderToggleButton.gameObject.SetActive(false);
+
         Refresh();
     }
 
@@ -62,9 +65,6 @@ public class EquipmentSelectionUI : MonoBehaviour
 
     private void Hookup()
     {
-        if (genderToggleButton != null)
-            genderToggleButton.onClick.AddListener(OnGenderToggle);
-
         if (headPrevButton != null)
             headPrevButton.onClick.AddListener(OnHeadPrev);
         if (headNextButton != null)
@@ -98,9 +98,6 @@ public class EquipmentSelectionUI : MonoBehaviour
 
     private void Unhook()
     {
-        if (genderToggleButton != null)
-            genderToggleButton.onClick.RemoveListener(OnGenderToggle);
-
         if (headPrevButton != null)
             headPrevButton.onClick.RemoveListener(OnHeadPrev);
         if (headNextButton != null)
@@ -130,17 +127,6 @@ public class EquipmentSelectionUI : MonoBehaviour
             weaponPrevButton.onClick.RemoveListener(OnWeaponPrev);
         if (weaponNextButton != null)
             weaponNextButton.onClick.RemoveListener(OnWeaponNext);
-    }
-
-    private void OnGenderToggle()
-    {
-        if (equipment == null)
-            return;
-
-        var next = equipment.CurrentGender == EquipmentSystem.Gender.Male
-            ? EquipmentSystem.Gender.Female
-            : EquipmentSystem.Gender.Male;
-        equipment.SetGender(next);
     }
 
     private void OnHeadPrev() => equipment?.PreviousSlot(EquipmentSystem.Slot.Head);
@@ -189,7 +175,7 @@ public class EquipmentSelectionUI : MonoBehaviour
         int count = equipment.GetSlotCount(slot);
         string name = equipment.GetCurrentItemName(slot);
 
-        if (count <= 0)
+        if (count <= 0 || !equipment.IsSlotEquipped(slot))
             return $"{label}: None";
 
         if (string.IsNullOrWhiteSpace(name))

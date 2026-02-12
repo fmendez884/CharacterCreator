@@ -1,8 +1,5 @@
-using System;
 using System.Collections.Generic;
 using UnityEditor;
-using UnityEditor.AddressableAssets;
-using UnityEditor.AddressableAssets.Settings;
 using UnityEngine;
 
 public static class FfxivAddressableIndexBuilder
@@ -17,28 +14,55 @@ public static class FfxivAddressableIndexBuilder
 
     public static bool BuildIndex(bool showDialog)
     {
-        var settings = AddressableAssetSettingsDefaultObject.Settings;
-        if (settings == null)
+        if (!FfxivRuntimeCatalogBuilder.BuildCatalog(showDialog: false))
+            return false;
+
+        var runtimeCatalog = FfxivRuntimeCatalogBuilder.LoadOrCreateCatalog();
+        if (runtimeCatalog == null)
         {
-            Debug.LogError("[FFXIV] Addressables settings not found. Create Addressables settings first.");
+            Debug.LogError("[FFXIV] Runtime catalog not found. Build runtime catalog first.");
             return false;
         }
 
         var index = LoadOrCreateIndex();
-        index.ClearLists();
+        index.maleToken = runtimeCatalog.maleToken;
+        index.femaleToken = runtimeCatalog.femaleToken;
+        index.hairToken = runtimeCatalog.hairToken;
+        index.faceToken = runtimeCatalog.faceToken;
+        index.equipmentBaseToken = runtimeCatalog.equipmentBaseToken;
+        index.headToken = runtimeCatalog.headToken;
+        index.bodyToken = runtimeCatalog.bodyToken;
+        index.handsToken = runtimeCatalog.handsToken;
+        index.legsToken = runtimeCatalog.legsToken;
+        index.feetToken = runtimeCatalog.feetToken;
+        index.labelHair = runtimeCatalog.labelHair;
+        index.labelFace = runtimeCatalog.labelFace;
+        index.labelEquipment = runtimeCatalog.labelEquipment;
+        index.labelWeapons = runtimeCatalog.labelWeapons;
+        index.labelBody = runtimeCatalog.labelBody;
 
-        AddCategory(settings, index.labelHair, index, AddressableCategory.Hair);
-        AddCategory(settings, index.labelFace, index, AddressableCategory.Face);
-        AddCategory(settings, index.labelEquipment, index, AddressableCategory.Equipment);
-        AddCategory(settings, index.labelWeapons, index, AddressableCategory.Weapons);
-        AddCategory(settings, index.labelBody, index, AddressableCategory.Body);
-
-        SortAll(index);
+        CopyList(runtimeCatalog.maleHair, index.maleHair);
+        CopyList(runtimeCatalog.femaleHair, index.femaleHair);
+        CopyList(runtimeCatalog.maleFace, index.maleFace);
+        CopyList(runtimeCatalog.femaleFace, index.femaleFace);
+        CopyList(runtimeCatalog.maleHead, index.maleHead);
+        CopyList(runtimeCatalog.maleBody, index.maleBody);
+        CopyList(runtimeCatalog.maleHands, index.maleHands);
+        CopyList(runtimeCatalog.maleLegs, index.maleLegs);
+        CopyList(runtimeCatalog.maleFeet, index.maleFeet);
+        CopyList(runtimeCatalog.femaleHead, index.femaleHead);
+        CopyList(runtimeCatalog.femaleBody, index.femaleBody);
+        CopyList(runtimeCatalog.femaleHands, index.femaleHands);
+        CopyList(runtimeCatalog.femaleLegs, index.femaleLegs);
+        CopyList(runtimeCatalog.femaleFeet, index.femaleFeet);
+        CopyList(runtimeCatalog.maleBaseBodies, index.maleBaseBodies);
+        CopyList(runtimeCatalog.femaleBaseBodies, index.femaleBaseBodies);
+        CopyList(runtimeCatalog.weapons, index.weapons);
 
         EditorUtility.SetDirty(index);
         AssetDatabase.SaveAssets();
         if (showDialog)
-            EditorUtility.DisplayDialog("FFXIV Addressables", "Addressable index built.", "OK");
+            EditorUtility.DisplayDialog("FFXIV Addressables", "Addressable index built from runtime catalog.", "OK");
         return true;
     }
 
@@ -57,115 +81,12 @@ public static class FfxivAddressableIndexBuilder
         return index;
     }
 
-    private static void AddCategory(AddressableAssetSettings settings, string label, FfxivAddressableIndex index, AddressableCategory category)
+    private static void CopyList(List<string> source, List<string> target)
     {
-        if (string.IsNullOrWhiteSpace(label))
+        target.Clear();
+        if (source == null || source.Count == 0)
             return;
 
-        var entries = new List<AddressableAssetEntry>();
-        settings.GetAllAssets(entries, includeSubObjects: false, entryFilter: entry => entry != null && entry.labels.Contains(label));
-        foreach (var entry in entries)
-        {
-            if (entry == null || entry.IsFolder)
-                continue;
-
-            var address = entry.address;
-            if (string.IsNullOrWhiteSpace(address))
-                continue;
-
-            switch (category)
-            {
-                case AddressableCategory.Hair:
-                    AddGendered(index.maleHair, index.femaleHair, address, index.maleToken, index.femaleToken);
-                    break;
-                case AddressableCategory.Face:
-                    AddGendered(index.maleFace, index.femaleFace, address, index.maleToken, index.femaleToken);
-                    break;
-                case AddressableCategory.Weapons:
-                    AddUnique(index.weapons, address);
-                    break;
-                case AddressableCategory.Body:
-                    if (!ContainsToken(address, index.equipmentBaseToken))
-                        break;
-                    AddGendered(index.maleBaseBodies, index.femaleBaseBodies, address, index.maleToken, index.femaleToken);
-                    break;
-                case AddressableCategory.Equipment:
-                    if (ContainsToken(address, index.equipmentBaseToken))
-                        break;
-
-                    if (ContainsToken(address, index.headToken))
-                        AddGendered(index.maleHead, index.femaleHead, address, index.maleToken, index.femaleToken);
-                    else if (ContainsToken(address, index.bodyToken))
-                        AddGendered(index.maleBody, index.femaleBody, address, index.maleToken, index.femaleToken);
-                    else if (ContainsToken(address, index.handsToken))
-                        AddGendered(index.maleHands, index.femaleHands, address, index.maleToken, index.femaleToken);
-                    else if (ContainsToken(address, index.legsToken))
-                        AddGendered(index.maleLegs, index.femaleLegs, address, index.maleToken, index.femaleToken);
-                    else if (ContainsToken(address, index.feetToken))
-                        AddGendered(index.maleFeet, index.femaleFeet, address, index.maleToken, index.femaleToken);
-                    break;
-            }
-        }
-    }
-
-    private static void AddGendered(List<string> maleList, List<string> femaleList, string address, string maleToken, string femaleToken)
-    {
-        bool isMale = ContainsToken(address, maleToken);
-        bool isFemale = ContainsToken(address, femaleToken);
-
-        if (!isMale && !isFemale)
-        {
-            AddUnique(maleList, address);
-            AddUnique(femaleList, address);
-            return;
-        }
-
-        if (isMale)
-            AddUnique(maleList, address);
-        if (isFemale)
-            AddUnique(femaleList, address);
-    }
-
-    private static bool ContainsToken(string value, string token)
-    {
-        if (string.IsNullOrWhiteSpace(value) || string.IsNullOrWhiteSpace(token))
-            return false;
-        return value.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
-    }
-
-    private static void AddUnique(List<string> list, string value)
-    {
-        if (!string.IsNullOrWhiteSpace(value) && !list.Contains(value))
-            list.Add(value);
-    }
-
-    private static void SortAll(FfxivAddressableIndex index)
-    {
-        index.maleHair.Sort(StringComparer.OrdinalIgnoreCase);
-        index.femaleHair.Sort(StringComparer.OrdinalIgnoreCase);
-        index.maleFace.Sort(StringComparer.OrdinalIgnoreCase);
-        index.femaleFace.Sort(StringComparer.OrdinalIgnoreCase);
-        index.maleHead.Sort(StringComparer.OrdinalIgnoreCase);
-        index.femaleHead.Sort(StringComparer.OrdinalIgnoreCase);
-        index.maleBody.Sort(StringComparer.OrdinalIgnoreCase);
-        index.femaleBody.Sort(StringComparer.OrdinalIgnoreCase);
-        index.maleHands.Sort(StringComparer.OrdinalIgnoreCase);
-        index.femaleHands.Sort(StringComparer.OrdinalIgnoreCase);
-        index.maleLegs.Sort(StringComparer.OrdinalIgnoreCase);
-        index.femaleLegs.Sort(StringComparer.OrdinalIgnoreCase);
-        index.maleFeet.Sort(StringComparer.OrdinalIgnoreCase);
-        index.femaleFeet.Sort(StringComparer.OrdinalIgnoreCase);
-        index.maleBaseBodies.Sort(StringComparer.OrdinalIgnoreCase);
-        index.femaleBaseBodies.Sort(StringComparer.OrdinalIgnoreCase);
-        index.weapons.Sort(StringComparer.OrdinalIgnoreCase);
-    }
-
-    private enum AddressableCategory
-    {
-        Hair,
-        Face,
-        Equipment,
-        Weapons,
-        Body
+        target.AddRange(source);
     }
 }

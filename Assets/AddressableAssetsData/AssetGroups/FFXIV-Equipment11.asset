@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bbb281ee3bf0b054c82ac2347e9e782c, type: 3}
+  m_Name: FFXIV-Equipment11
+  m_EditorClassIdentifier: 
+  m_GroupName: FFXIV-Equipment11
+  m_Data:
+    m_SerializedData: []
+  m_GUID: 03a528149201bda4293ed3be4c8425c1
+  m_SerializeEntries: []
+  m_ReadOnly: 0
+  m_Settings: {fileID: 11400000, guid: cf0831aa329fd6c44aae853afe962d54, type: 2}
+  m_SchemaSet:
+    m_Schemas:
+    - {fileID: 11400000, guid: d79db5ccb13c5f7489958d1e08152566, type: 2}
+    - {fileID: 11400000, guid: d554be061ec83324c959443d76315654, type: 2}

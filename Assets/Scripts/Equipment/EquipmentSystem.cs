@@ -77,6 +77,7 @@ public class EquipmentSystem : MonoBehaviour
 
     [Header("Selection")]
     [SerializeField] private Gender gender = Gender.Male;
+    [SerializeField] private bool includeUnequippedOption = true;
     [SerializeField] private int headIndex;
     [SerializeField] private int bodyIndex;
     [SerializeField] private int handsIndex;
@@ -105,6 +106,7 @@ public class EquipmentSystem : MonoBehaviour
     [SerializeField] private bool logAddressables = true;
 
     [Header("Addressable Index")]
+    [SerializeField] private FfxivRuntimeCatalog runtimeCatalog;
     [SerializeField] private UnityEngine.Object addressableIndex;
     [SerializeField] private bool useAddressableIndex = true;
 
@@ -156,9 +158,19 @@ public class EquipmentSystem : MonoBehaviour
     private GameObject legsInstance;
     private GameObject feetInstance;
     private GameObject weaponInstance;
+    private string pendingHeadKey;
+    private string pendingBodyKey;
+    private string pendingHandsKey;
+    private string pendingLegsKey;
+    private string pendingFeetKey;
+    private string pendingWeaponKey;
     private readonly List<GameObject> maleBaseBodyInstances = new();
     private readonly List<GameObject> femaleBaseBodyInstances = new();
     private bool indexKeysLoaded;
+    private bool warnedEquipmentAddressablesNotLoaded;
+    private bool warnedBodyAddressablesNotLoaded;
+    private bool warnedWeaponAddressablesNotLoaded;
+    private bool loggedStartupMode;
     private Coroutine runtimeCleanupCoroutine;
     private bool scanRootsCached;
     private Transform[] cachedScanRoots = Array.Empty<Transform>();
@@ -199,12 +211,28 @@ public class EquipmentSystem : MonoBehaviour
     {
         addressableIndex = index;
         indexKeysLoaded = false;
+        warnedEquipmentAddressablesNotLoaded = false;
+        warnedBodyAddressablesNotLoaded = false;
+        warnedWeaponAddressablesNotLoaded = false;
+        loggedStartupMode = false;
+        ApplySelection();
+    }
+
+    public void SetRuntimeCatalog(FfxivRuntimeCatalog catalog)
+    {
+        runtimeCatalog = catalog;
+        indexKeysLoaded = false;
+        warnedEquipmentAddressablesNotLoaded = false;
+        warnedBodyAddressablesNotLoaded = false;
+        warnedWeaponAddressablesNotLoaded = false;
+        loggedStartupMode = false;
         ApplySelection();
     }
 
     private void Awake()
     {
         EnsureCharacterRoot();
+        EnsureRuntimeDataSources();
 
         if (usePrefabCatalog)
             ApplyPrefabCatalog();
@@ -214,10 +242,7 @@ public class EquipmentSystem : MonoBehaviour
         if (UseAddressableIndex())
             ApplyIndexKeys();
 
-        if (UseAddressableIndex())
-            ApplyIndexKeys();
-
-        if (!UseAddressableIndex() && loadAddressablesOnAwake && (useAddressablesForEquipment || useAddressablesForWeapons))
+        if (!UseAddressableIndex() && loadAddressablesOnAwake && (useAddressablesForEquipment || useAddressablesForWeapons || useAddressablesForBaseBodies))
             LoadAddressables();
 
         ApplySelection();
@@ -402,6 +427,10 @@ public class EquipmentSystem : MonoBehaviour
     [ContextMenu("Load Addressables (Equipment/Weapons)")]
     public void LoadAddressables()
     {
+        warnedEquipmentAddressablesNotLoaded = false;
+        warnedBodyAddressablesNotLoaded = false;
+        warnedWeaponAddressablesNotLoaded = false;
+
         if (UseAddressableIndex())
         {
             ApplyIndexKeys();
@@ -520,6 +549,7 @@ public class EquipmentSystem : MonoBehaviour
             LogActiveSnapshot("After ApplySceneWeapon");
         }
 
+        LogActiveSlotSummary("After ApplySelection");
         Changed?.Invoke();
     }
 
@@ -559,11 +589,61 @@ public class EquipmentSystem : MonoBehaviour
             return;
         }
 
-        SwapAddressableInstance(headInstance, instance => headInstance = instance, GetKeyForSlot(Slot.Head, gender), "Head", ResolveEquipmentRoot());
-        SwapAddressableInstance(bodyInstance, instance => bodyInstance = instance, GetKeyForSlot(Slot.Body, gender), "Body", ResolveEquipmentRoot());
-        SwapAddressableInstance(handsInstance, instance => handsInstance = instance, GetKeyForSlot(Slot.Hands, gender), "Hands", ResolveEquipmentRoot());
-        SwapAddressableInstance(legsInstance, instance => legsInstance = instance, GetKeyForSlot(Slot.Legs, gender), "Legs", ResolveEquipmentRoot());
-        SwapAddressableInstance(feetInstance, instance => feetInstance = instance, GetKeyForSlot(Slot.Feet, gender), "Feet", ResolveEquipmentRoot());
+        SwapAddressableInstance(
+            headInstance,
+            instance => headInstance = instance,
+            () => headInstance,
+            () => GetKeyForSlot(Slot.Head, gender),
+            () => pendingHeadKey,
+            value => pendingHeadKey = value,
+            GetKeyForSlot(Slot.Head, gender),
+            "Head",
+            ResolveEquipmentRoot()
+        );
+        SwapAddressableInstance(
+            bodyInstance,
+            instance => bodyInstance = instance,
+            () => bodyInstance,
+            () => GetKeyForSlot(Slot.Body, gender),
+            () => pendingBodyKey,
+            value => pendingBodyKey = value,
+            GetKeyForSlot(Slot.Body, gender),
+            "Body",
+            ResolveEquipmentRoot()
+        );
+        SwapAddressableInstance(
+            handsInstance,
+            instance => handsInstance = instance,
+            () => handsInstance,
+            () => GetKeyForSlot(Slot.Hands, gender),
+            () => pendingHandsKey,
+            value => pendingHandsKey = value,
+            GetKeyForSlot(Slot.Hands, gender),
+            "Hands",
+            ResolveEquipmentRoot()
+        );
+        SwapAddressableInstance(
+            legsInstance,
+            instance => legsInstance = instance,
+            () => legsInstance,
+            () => GetKeyForSlot(Slot.Legs, gender),
+            () => pendingLegsKey,
+            value => pendingLegsKey = value,
+            GetKeyForSlot(Slot.Legs, gender),
+            "Legs",
+            ResolveEquipmentRoot()
+        );
+        SwapAddressableInstance(
+            feetInstance,
+            instance => feetInstance = instance,
+            () => feetInstance,
+            () => GetKeyForSlot(Slot.Feet, gender),
+            () => pendingFeetKey,
+            value => pendingFeetKey = value,
+            GetKeyForSlot(Slot.Feet, gender),
+            "Feet",
+            ResolveEquipmentRoot()
+        );
 
         UpdateBaseBodyVisibility(Slot.Head, HasSlotSelection(Slot.Head));
         UpdateBaseBodyVisibility(Slot.Body, HasSlotSelection(Slot.Body));
@@ -699,7 +779,17 @@ public class EquipmentSystem : MonoBehaviour
             return;
         }
 
-        SwapAddressableInstance(weaponInstance, instance => weaponInstance = instance, GetKeyForSlot(Slot.Weapon, gender), "Weapon", ResolveWeaponSocket());
+        SwapAddressableInstance(
+            weaponInstance,
+            instance => weaponInstance = instance,
+            () => weaponInstance,
+            () => GetKeyForSlot(Slot.Weapon, gender),
+            () => pendingWeaponKey,
+            value => pendingWeaponKey = value,
+            GetKeyForSlot(Slot.Weapon, gender),
+            "Weapon",
+            ResolveWeaponSocket()
+        );
     }
 
     private void ApplySceneWeapon()
@@ -778,6 +868,79 @@ public class EquipmentSystem : MonoBehaviour
             $"[EquipmentSystem] {label} snapshot. Roots={rootNames}. Scanned={scanned}, Renderable={renderable}, Excluded={excluded}, ActiveRenderable={activeRenderable}, ActiveEquipment={activeEquipment}, ActiveWeapon={activeWeapon}, ActiveBaseBody={activeBase}.",
             this
         );
+    }
+
+    private void LogActiveSlotSummary(string label)
+    {
+        if (!logSceneCleanup)
+            return;
+
+        Transform[] roots = ResolveScanRootsForCleanup();
+        if (roots == null || roots.Length == 0)
+        {
+            Debug.Log($"[EquipmentSystem] {label} slot summary skipped (no scan roots).", this);
+            return;
+        }
+
+        var counts = new Dictionary<Slot, int>();
+        var samples = new Dictionary<Slot, List<string>>();
+        foreach (Slot slot in Enum.GetValues(typeof(Slot)))
+        {
+            if (slot == Slot.Weapon)
+                continue;
+
+            counts[slot] = 0;
+            samples[slot] = new List<string>(4);
+        }
+
+        foreach (var root in roots)
+        {
+            if (root == null)
+                continue;
+
+            foreach (var child in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (child == null)
+                    continue;
+
+                var go = child.gameObject;
+                if (go == null || (characterRoot != null && go == characterRoot.gameObject))
+                    continue;
+
+                if (!HasRenderable(go) || !go.activeInHierarchy)
+                    continue;
+
+                string name = go.name;
+                if (HasExcludedToken(name))
+                    continue;
+
+                if (!TryResolveSlot(name, out var slot))
+                    continue;
+
+                if (MatchesToken(name, equipmentBaseToken))
+                    continue;
+
+                counts[slot]++;
+
+                var list = samples[slot];
+                if (list.Count < 4)
+                {
+                    bool isMale = MatchesToken(name, maleToken);
+                    bool isFemale = MatchesToken(name, femaleToken);
+                    string genderTag = isMale && isFemale ? "MF" : isMale ? "M" : isFemale ? "F" : "None";
+                    list.Add($"{name}({genderTag})");
+                }
+            }
+        }
+
+        string summary =
+            $"Head={counts[Slot.Head]}, Body={counts[Slot.Body]}, Hands={counts[Slot.Hands]}, Legs={counts[Slot.Legs]}, Feet={counts[Slot.Feet]}";
+        string samplesText =
+            $"Head=[{string.Join(", ", samples[Slot.Head])}] Body=[{string.Join(", ", samples[Slot.Body])}] " +
+            $"Hands=[{string.Join(", ", samples[Slot.Hands])}] Legs=[{string.Join(", ", samples[Slot.Legs])}] " +
+            $"Feet=[{string.Join(", ", samples[Slot.Feet])}]";
+
+        Debug.Log($"[EquipmentSystem] {label} slot summary. {summary}. Samples: {samplesText}.", this);
     }
 
     private void CleanupSceneObjectsIfNeeded()
@@ -1218,8 +1381,11 @@ public class EquipmentSystem : MonoBehaviour
 
         if (!equipmentHandleValid)
         {
-            if (logAddressables)
+            if (logAddressables && !warnedEquipmentAddressablesNotLoaded)
+            {
                 Debug.LogWarning("[EquipmentSystem] Equipment Addressables not loaded. Call LoadAddressables first.");
+                warnedEquipmentAddressablesNotLoaded = true;
+            }
             return false;
         }
 
@@ -1276,8 +1442,14 @@ public class EquipmentSystem : MonoBehaviour
             var instance = handle.Result;
             instance.name = key;
             instance.SetActive(false);
+            if (gender != forGender)
+            {
+                Addressables.ReleaseInstance(instance);
+                return;
+            }
+
             instances.Add(instance);
-            SetInstanceActive(instance, gender == forGender);
+            ApplyBaseBodyActivation(forGender);
         };
 #endif
     }
@@ -1357,8 +1529,11 @@ public class EquipmentSystem : MonoBehaviour
 
         if (!bodyHandleValid)
         {
-            if (logAddressables)
+            if (logAddressables && !warnedBodyAddressablesNotLoaded)
+            {
                 Debug.LogWarning("[EquipmentSystem] Body Addressables not loaded. Call LoadAddressables first.");
+                warnedBodyAddressablesNotLoaded = true;
+            }
             return false;
         }
 
@@ -1388,8 +1563,11 @@ public class EquipmentSystem : MonoBehaviour
 
         if (!weaponsHandleValid)
         {
-            if (logAddressables)
+            if (logAddressables && !warnedWeaponAddressablesNotLoaded)
+            {
                 Debug.LogWarning("[EquipmentSystem] Weapons Addressables not loaded. Call LoadAddressables first.");
+                warnedWeaponAddressablesNotLoaded = true;
+            }
             return false;
         }
 
@@ -1410,7 +1588,7 @@ public class EquipmentSystem : MonoBehaviour
 
     private bool UseAddressableIndex()
     {
-        return useAddressableIndex && addressableIndex != null;
+        return useAddressableIndex && ResolveDataIndexAsset() != null;
     }
 
     private void ApplyIndexKeys()
@@ -1418,7 +1596,7 @@ public class EquipmentSystem : MonoBehaviour
         if (indexKeysLoaded)
             return;
 
-        var index = addressableIndex as ScriptableObject;
+        var index = ResolveDataIndexAsset();
         if (index == null)
             return;
 
@@ -1446,6 +1624,54 @@ public class EquipmentSystem : MonoBehaviour
         SortByName(weaponKeys);
 
         indexKeysLoaded = true;
+    }
+
+    private void EnsureRuntimeDataSources()
+    {
+        if (runtimeCatalog == null)
+            runtimeCatalog = Resources.Load<FfxivRuntimeCatalog>("FfxivRuntimeCatalog");
+
+        if (addressableIndex == null)
+            addressableIndex = Resources.Load<FfxivAddressableIndex>("FfxivAddressableIndex");
+
+        if (loggedStartupMode)
+            return;
+
+        bool usingIndex = UseAddressableIndex();
+        bool wantsAddressables = useAddressablesForEquipment || useAddressablesForWeapons || useAddressablesForBaseBodies;
+
+        if (usingIndex && logAddressables && wantsAddressables)
+        {
+            Debug.Log(
+                "[EquipmentSystem] useAddressableIndex is enabled. Async label preload handles are skipped; selection keys come from index/runtime catalog.",
+                this
+            );
+        }
+        else if (!usingIndex && logAddressables && wantsAddressables && !loadAddressablesOnAwake)
+        {
+            Debug.LogWarning(
+                "[EquipmentSystem] Addressables are enabled while loadAddressablesOnAwake is disabled. Call LoadAddressables() before changing selections.",
+                this
+            );
+        }
+
+        loggedStartupMode = true;
+    }
+
+    private ScriptableObject ResolveDataIndexAsset()
+    {
+        if (runtimeCatalog != null)
+            return runtimeCatalog;
+
+        if (addressableIndex is ScriptableObject scriptableIndex)
+            return scriptableIndex;
+
+        runtimeCatalog = Resources.Load<FfxivRuntimeCatalog>("FfxivRuntimeCatalog");
+        if (runtimeCatalog != null)
+            return runtimeCatalog;
+
+        addressableIndex = Resources.Load<FfxivAddressableIndex>("FfxivAddressableIndex");
+        return addressableIndex as ScriptableObject;
     }
 
     private bool TryCopyIndexList(ScriptableObject index, string fieldName, List<string> target)
@@ -1614,10 +1840,20 @@ public class EquipmentSystem : MonoBehaviour
         return list[index];
     }
 
-    private void SwapAddressableInstance(GameObject currentInstance, Action<GameObject> assignInstance, string key, string label, Transform parent)
+    private void SwapAddressableInstance(
+        GameObject currentInstance,
+        Action<GameObject> assignInstance,
+        Func<GameObject> getAssignedInstance,
+        Func<string> getExpectedKey,
+        Func<string> getPendingKey,
+        Action<string> setPendingKey,
+        string key,
+        string label,
+        Transform parent)
     {
         if (string.IsNullOrEmpty(key))
         {
+            setPendingKey?.Invoke(null);
             if (currentInstance != null)
                 currentInstance.SetActive(false);
             return;
@@ -1625,9 +1861,15 @@ public class EquipmentSystem : MonoBehaviour
 
         if (currentInstance != null && string.Equals(currentInstance.name, key, StringComparison.OrdinalIgnoreCase))
         {
+            setPendingKey?.Invoke(null);
             currentInstance.SetActive(true);
             return;
         }
+
+        if (string.Equals(getPendingKey?.Invoke(), key, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        setPendingKey?.Invoke(key);
 
 #if ENABLE_ADDRESSABLES
         if (currentInstance != null)
@@ -1641,6 +1883,16 @@ public class EquipmentSystem : MonoBehaviour
 
         Addressables.InstantiateAsync(key, parent).Completed += handle =>
         {
+            bool stillPending = string.Equals(getPendingKey?.Invoke(), key, StringComparison.OrdinalIgnoreCase);
+            if (!stillPending)
+            {
+                if (handle.Status == AsyncOperationStatus.Succeeded && handle.Result != null)
+                    Addressables.ReleaseInstance(handle.Result);
+                return;
+            }
+
+            setPendingKey?.Invoke(null);
+
             if (handle.Status != AsyncOperationStatus.Succeeded)
             {
                 if (logAddressables)
@@ -1648,12 +1900,22 @@ public class EquipmentSystem : MonoBehaviour
                 return;
             }
 
+            string expectedKey = getExpectedKey?.Invoke();
+            if (!string.Equals(expectedKey, key, StringComparison.OrdinalIgnoreCase))
+            {
+                Addressables.ReleaseInstance(handle.Result);
+                return;
+            }
+
             var instance = handle.Result;
             instance.name = key;
-            instance.SetActive(false);
+
+            var assigned = getAssignedInstance?.Invoke();
+            if (assigned != null && assigned != instance)
+                Addressables.ReleaseInstance(assigned);
+
             assignInstance?.Invoke(instance);
-            if (activateNewInstances)
-                SetInstanceActive(instance, true);
+            SetInstanceActive(instance, true);
         };
 #endif
     }
@@ -1683,6 +1945,12 @@ public class EquipmentSystem : MonoBehaviour
         legsInstance = null;
         feetInstance = null;
         weaponInstance = null;
+        pendingHeadKey = null;
+        pendingBodyKey = null;
+        pendingHandsKey = null;
+        pendingLegsKey = null;
+        pendingFeetKey = null;
+        pendingWeaponKey = null;
 
         if (equipmentHandleValid && equipmentLoadHandle.IsValid())
             Addressables.Release(equipmentLoadHandle);
@@ -1706,19 +1974,19 @@ public class EquipmentSystem : MonoBehaviour
     private void StepSlot(Slot slot, int delta)
     {
         int current = GetSlotIndex(slot);
-        int next = CycleIndex(current, GetSlotCount(slot), delta);
+        int next = CycleIndex(current, GetSlotCount(slot), delta, includeUnequippedOption);
         SetSlotIndex(slot, next);
         ApplySelection();
     }
 
     private void ClampIndices()
     {
-        headIndex = ClampIndex(headIndex, GetSlotCount(Slot.Head));
-        bodyIndex = ClampIndex(bodyIndex, GetSlotCount(Slot.Body));
-        handsIndex = ClampIndex(handsIndex, GetSlotCount(Slot.Hands));
-        legsIndex = ClampIndex(legsIndex, GetSlotCount(Slot.Legs));
-        feetIndex = ClampIndex(feetIndex, GetSlotCount(Slot.Feet));
-        weaponIndex = ClampIndex(weaponIndex, GetSlotCount(Slot.Weapon));
+        headIndex = ClampIndex(headIndex, GetSlotCount(Slot.Head), includeUnequippedOption);
+        bodyIndex = ClampIndex(bodyIndex, GetSlotCount(Slot.Body), includeUnequippedOption);
+        handsIndex = ClampIndex(handsIndex, GetSlotCount(Slot.Hands), includeUnequippedOption);
+        legsIndex = ClampIndex(legsIndex, GetSlotCount(Slot.Legs), includeUnequippedOption);
+        feetIndex = ClampIndex(feetIndex, GetSlotCount(Slot.Feet), includeUnequippedOption);
+        weaponIndex = ClampIndex(weaponIndex, GetSlotCount(Slot.Weapon), includeUnequippedOption);
     }
 
     private Transform ResolveEquipmentRoot()
@@ -2493,15 +2761,31 @@ public class EquipmentSystem : MonoBehaviour
         return name.StartsWith(weaponPrefix, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static int ClampIndex(int index, int count)
-    {
-        return count <= 0 ? -1 : Mathf.Clamp(index, 0, count - 1);
-    }
-
-    private static int CycleIndex(int index, int count, int delta)
+    private static int ClampIndex(int index, int count, bool includeNone)
     {
         if (count <= 0)
             return -1;
+
+        return includeNone
+            ? Mathf.Clamp(index, -1, count - 1)
+            : Mathf.Clamp(index, 0, count - 1);
+    }
+
+    private static int CycleIndex(int index, int count, int delta, bool includeNone)
+    {
+        if (count <= 0)
+            return -1;
+
+        if (includeNone)
+        {
+            int total = count + 1; // include the unequipped state at -1
+            int currentPosition = Mathf.Clamp(index + 1, 0, total - 1);
+            int nextPosition = (currentPosition + delta) % total;
+            if (nextPosition < 0)
+                nextPosition += total;
+
+            return nextPosition - 1;
+        }
 
         int current = Mathf.Clamp(index, 0, count - 1);
         int next = (current + delta) % count;

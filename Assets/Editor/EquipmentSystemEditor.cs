@@ -4,6 +4,7 @@ using UnityEditor;
 public class EquipmentSystemEditor : Editor
 {
     private SerializedProperty addressableIndex;
+    private SerializedProperty runtimeCatalog;
     private SerializedProperty useAddressableIndex;
     private SerializedProperty useAddressablesForEquipment;
     private SerializedProperty useAddressablesForWeapons;
@@ -23,6 +24,7 @@ public class EquipmentSystemEditor : Editor
     private void OnEnable()
     {
         addressableIndex = serializedObject.FindProperty("addressableIndex");
+        runtimeCatalog = serializedObject.FindProperty("runtimeCatalog");
         useAddressableIndex = serializedObject.FindProperty("useAddressableIndex");
         useAddressablesForEquipment = serializedObject.FindProperty("useAddressablesForEquipment");
         useAddressablesForWeapons = serializedObject.FindProperty("useAddressablesForWeapons");
@@ -48,6 +50,7 @@ public class EquipmentSystemEditor : Editor
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Addressable Index", EditorStyles.boldLabel);
         EditorGUILayout.PropertyField(useAddressableIndex);
+        EditorGUILayout.PropertyField(runtimeCatalog);
         EditorGUILayout.PropertyField(addressableIndex);
 
         EditorGUILayout.Space(8);

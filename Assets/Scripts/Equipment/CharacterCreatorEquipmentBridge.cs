@@ -43,12 +43,16 @@ public class CharacterCreatorEquipmentBridge : MonoBehaviour
     {
         if (characterCreator != null)
             characterCreator.Changed += OnCharacterChanged;
+        if (equipmentSystem != null)
+            equipmentSystem.Changed += OnEquipmentChanged;
     }
 
     private void Unhook()
     {
         if (characterCreator != null)
             characterCreator.Changed -= OnCharacterChanged;
+        if (equipmentSystem != null)
+            equipmentSystem.Changed -= OnEquipmentChanged;
     }
 
     private void OnCharacterChanged()
@@ -64,6 +68,11 @@ public class CharacterCreatorEquipmentBridge : MonoBehaviour
         if (syncBaseBodies)
             characterCreator.SetManageBaseBodies(!equipmentSystem.ManageBaseBodies);
 
+        SyncHairVisibility();
+    }
+
+    private void OnEquipmentChanged()
+    {
         SyncHairVisibility();
     }
 

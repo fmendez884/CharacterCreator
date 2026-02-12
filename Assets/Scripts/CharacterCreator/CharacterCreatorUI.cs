@@ -29,7 +29,6 @@ public class CharacterCreatorUI : MonoBehaviour
             return;
 
         Hookup();
-        creator.RebuildFromScene();
         creator.Changed += Refresh;
         Refresh();
     }

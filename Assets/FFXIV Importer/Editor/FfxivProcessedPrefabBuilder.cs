@@ -182,7 +182,9 @@ public static class FfxivProcessedPrefabBuilder
 
             int movedAddressables = 0;
             bool addressablesUpdated = false;
+            bool runtimeCatalogBuilt = false;
             bool indexBuilt = false;
+            bool prefabCatalogBuilt = false;
             bool stagingCleaned = false;
 
             if (autoSetupAddressables)
@@ -191,8 +193,13 @@ public static class FfxivProcessedPrefabBuilder
                 addressablesUpdated = true;
             }
 
+            runtimeCatalogBuilt = FfxivRuntimeCatalogBuilder.BuildCatalog(showDialog: false);
+
             if (autoBuildAddressableIndex)
+            {
                 indexBuilt = FfxivAddressableIndexBuilder.BuildIndex(showDialog: false);
+                prefabCatalogBuilt = FfxivPrefabCatalogBuilder.BuildCatalog(showDialog: false);
+            }
 
             if (cleanupStaging)
                 stagingCleaned = CleanupStaging();
@@ -200,7 +207,9 @@ public static class FfxivProcessedPrefabBuilder
             EditorUtility.DisplayDialog(
                 "FFXIV Processed Prefabs",
                 $"Copied assets: {copiedAssets}\nCopied FBXs: {copiedFbxs}\nProcessed FBXs: {processed}\nSkipped unchanged: {skippedUnchanged}\nFailed: {failed}\n\nAddressables updated: {(addressablesUpdated ? movedAddressables.ToString() : "No")}" +
+                $"\nRuntime catalog: {(runtimeCatalogBuilt ? "Built" : "Failed")}" +
                 $"\nAddressable index: {(autoBuildAddressableIndex ? (indexBuilt ? "Built" : "Failed") : "No")}" +
+                $"\nPrefab catalog: {(autoBuildAddressableIndex ? (prefabCatalogBuilt ? "Built" : "Failed") : "No")}" +
                 $"\nStaging cleanup: {(cleanupStaging ? (stagingCleaned ? "Removed" : "Skipped") : "No")}" +
                 $"\n\nOutput: {ProcessedRoot}",
                 "OK"

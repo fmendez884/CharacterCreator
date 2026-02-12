@@ -42,6 +42,7 @@ public class CharacterCreatorEditor : Editor
     private SerializedProperty useAddressablesForBodies;
     private SerializedProperty addressablesLabelBody;
     private SerializedProperty bodyBaseToken;
+    private SerializedProperty runtimeCatalog;
     private SerializedProperty addressableIndex;
     private SerializedProperty useAddressableIndex;
     private SerializedProperty prefabCatalog;
@@ -87,6 +88,7 @@ public class CharacterCreatorEditor : Editor
         useAddressablesForBodies = serializedObject.FindProperty("useAddressablesForBodies");
         addressablesLabelBody = serializedObject.FindProperty("addressablesLabelBody");
         bodyBaseToken = serializedObject.FindProperty("bodyBaseToken");
+        runtimeCatalog = serializedObject.FindProperty("runtimeCatalog");
         addressableIndex = serializedObject.FindProperty("addressableIndex");
         useAddressableIndex = serializedObject.FindProperty("useAddressableIndex");
         prefabCatalog = serializedObject.FindProperty("prefabCatalog");
@@ -166,6 +168,7 @@ public class CharacterCreatorEditor : Editor
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Addressables (Hair/Face)", EditorStyles.boldLabel);
         EditorGUILayout.PropertyField(useAddressableIndex);
+        EditorGUILayout.PropertyField(runtimeCatalog);
         EditorGUILayout.PropertyField(addressableIndex);
         EditorGUILayout.PropertyField(useAddressablesForHairFace);
         if (useAddressablesForHairFace.boolValue && !useAddressableIndex.boolValue)

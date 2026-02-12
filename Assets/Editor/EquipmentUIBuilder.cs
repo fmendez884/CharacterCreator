@@ -90,11 +90,8 @@ public static class EquipmentUIBuilder
         CreateText(genderRow.transform, "GenderLabel", "Gender", 14, TextAnchor.MiddleLeft)
             .gameObject.AddComponent<LayoutElement>().preferredWidth = 70f;
 
-        var genderToggleButton = CreateButton(genderRow.transform, "GenderToggleButton", "Toggle", buttonSprite);
-        SetPreferredWidth(genderToggleButton.gameObject, 80f);
-
         var genderValue = CreateText(genderRow.transform, "GenderValue", "Male", 14, TextAnchor.MiddleLeft);
-        genderValue.gameObject.AddComponent<LayoutElement>().preferredWidth = 110f;
+        genderValue.gameObject.AddComponent<LayoutElement>().preferredWidth = 190f;
 
         var headRow = CreateSlotRow(panel.transform, "HeadRow", "Head", buttonSprite, out var headPrev, out var headLabel, out var headNext);
         var bodyRow = CreateSlotRow(panel.transform, "BodyRow", "Body", buttonSprite, out var bodyPrev, out var bodyLabel, out var bodyNext);
@@ -107,7 +104,7 @@ public static class EquipmentUIBuilder
         var serializedUi = new SerializedObject(ui);
 
         serializedUi.FindProperty("equipment").objectReferenceValue = equipment;
-        serializedUi.FindProperty("genderToggleButton").objectReferenceValue = genderToggleButton;
+        serializedUi.FindProperty("genderToggleButton").objectReferenceValue = null;
         serializedUi.FindProperty("genderValueLabel").objectReferenceValue = genderValue;
         serializedUi.FindProperty("headPrevButton").objectReferenceValue = headPrev;
         serializedUi.FindProperty("headNextButton").objectReferenceValue = headNext;
