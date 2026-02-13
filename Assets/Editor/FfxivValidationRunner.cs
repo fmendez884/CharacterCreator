@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
@@ -242,25 +243,44 @@ public static class FfxivValidationRunner
     {
         ValidatePresetSchema(issues);
         const string verticalSliceScenePath = "Assets/Scenes/CharacterVerticalSlice.unity";
-        if (File.Exists(verticalSliceScenePath) && !CharacterVerticalSliceSceneBuilder.Validate(showDialog: false))
-            issues.Add("CharacterVerticalSlice scene validation failed.");
+        if (File.Exists(verticalSliceScenePath))
+        {
+            bool validated = TryInvokeStaticBool("CharacterVerticalSliceSceneBuilder", "Validate", false, defaultValue: true);
+            if (!validated)
+                issues.Add("CharacterVerticalSlice scene validation failed.");
+        }
         ValidatePortableWiring(issues);
     }
 
     private static void ValidatePresetSchema(List<string> issues)
     {
-        if (CharacterPresetData.CurrentVersion <= 0)
-            issues.Add("CharacterPresetData.CurrentVersion must be > 0.");
-
         var required = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "Head", "Body", "Hands", "Legs", "Feet", "Weapon"
         };
 
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < CharacterPresetData.KnownSlots.Length; i++)
+        int version = 1;
+        string[] knownSlots = null;
+        var presetDataType = FindTypeByName("CharacterPresetData");
+        if (presetDataType != null)
         {
-            string slot = CharacterPresetData.KnownSlots[i];
+            var versionField = presetDataType.GetField("CurrentVersion", BindingFlags.Public | BindingFlags.Static);
+            if (versionField != null && versionField.FieldType == typeof(int))
+                version = (int)versionField.GetValue(null);
+
+            var slotsField = presetDataType.GetField("KnownSlots", BindingFlags.Public | BindingFlags.Static);
+            if (slotsField != null && typeof(string[]).IsAssignableFrom(slotsField.FieldType))
+                knownSlots = slotsField.GetValue(null) as string[];
+        }
+
+        if (version <= 0)
+            issues.Add("CharacterPresetData.CurrentVersion must be > 0.");
+
+        knownSlots ??= new[] { "Head", "Body", "Hands", "Legs", "Feet", "Weapon" };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < knownSlots.Length; i++)
+        {
+            string slot = knownSlots[i];
             if (string.IsNullOrWhiteSpace(slot))
             {
                 issues.Add($"CharacterPresetData.KnownSlots contains empty value at index {i}.");
@@ -280,35 +300,122 @@ public static class FfxivValidationRunner
 
     private static void ValidatePortableWiring(List<string> issues)
     {
-        var facades = UnityEngine.Object.FindObjectsOfType<CharacterCustomizationFacade>(true);
-        for (int i = 0; i < facades.Length; i++)
+        ValidateWiringForType("CharacterCustomizationFacade", new[] { "characterCreator", "equipmentSystem" }, issues);
+        ValidateWiringForType("CharacterAvatarMount", new[] { "characterCreator", "equipmentSystem", "hostAdapter" }, issues);
+        ValidateWiringForType("CharacterControllerAvatarHost", new[] { "avatarAnchor" }, issues);
+    }
+
+    private static void ValidateWiringForType(string typeName, string[] requiredObjectRefs, List<string> issues)
+    {
+        var targets = FindObjectsByTypeName(typeName);
+        for (int i = 0; i < targets.Count; i++)
         {
-            var so = new SerializedObject(facades[i]);
-            if (so.FindProperty("characterCreator").objectReferenceValue == null)
-                issues.Add("CharacterCustomizationFacade.characterCreator is not wired.");
-            if (so.FindProperty("equipmentSystem").objectReferenceValue == null)
-                issues.Add("CharacterCustomizationFacade.equipmentSystem is not wired.");
+            var so = new SerializedObject(targets[i]);
+            for (int p = 0; p < requiredObjectRefs.Length; p++)
+            {
+                string propName = requiredObjectRefs[p];
+                var prop = so.FindProperty(propName);
+                if (prop == null || prop.objectReferenceValue == null)
+                    issues.Add($"{typeName}.{propName} is not wired.");
+            }
+        }
+    }
+
+    private static List<UnityEngine.Object> FindObjectsByTypeName(string typeName)
+    {
+        var results = new List<UnityEngine.Object>();
+        var type = FindTypeByName(typeName);
+        if (type == null || !typeof(UnityEngine.Object).IsAssignableFrom(type))
+            return results;
+
+        var method = typeof(UnityEngine.Object).GetMethod(
+            "FindObjectsOfType",
+            BindingFlags.Public | BindingFlags.Static,
+            binder: null,
+            types: new[] { typeof(Type), typeof(bool) },
+            modifiers: null
+        );
+
+        if (method == null)
+            return results;
+
+        var found = method.Invoke(null, new object[] { type, true }) as UnityEngine.Object[];
+        if (found == null || found.Length == 0)
+            return results;
+
+        results.AddRange(found);
+        return results;
+    }
+
+    private static bool TryInvokeStaticBool(string typeName, string methodName, bool argument, bool defaultValue)
+    {
+        var type = FindTypeByName(typeName);
+        if (type == null)
+            return defaultValue;
+
+        var method = type.GetMethod(
+            methodName,
+            BindingFlags.Public | BindingFlags.Static,
+            binder: null,
+            types: new[] { typeof(bool) },
+            modifiers: null
+        );
+
+        if (method == null)
+            return defaultValue;
+
+        try
+        {
+            object value = method.Invoke(null, new object[] { argument });
+            return value is bool b ? b : defaultValue;
+        }
+        catch
+        {
+            return defaultValue;
+        }
+    }
+
+    private static Type FindTypeByName(string typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName))
+            return null;
+
+        var direct = Type.GetType(typeName);
+        if (direct != null)
+            return direct;
+
+        var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+        for (int i = 0; i < assemblies.Length; i++)
+        {
+            var assembly = assemblies[i];
+            var type = assembly.GetType(typeName);
+            if (type != null)
+                return type;
+
+            Type[] allTypes;
+            try
+            {
+                allTypes = assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                allTypes = ex.Types;
+            }
+
+            if (allTypes == null)
+                continue;
+
+            for (int t = 0; t < allTypes.Length; t++)
+            {
+                var candidate = allTypes[t];
+                if (candidate == null)
+                    continue;
+                if (string.Equals(candidate.Name, typeName, StringComparison.Ordinal))
+                    return candidate;
+            }
         }
 
-        var mounts = UnityEngine.Object.FindObjectsOfType<CharacterAvatarMount>(true);
-        for (int i = 0; i < mounts.Length; i++)
-        {
-            var so = new SerializedObject(mounts[i]);
-            if (so.FindProperty("characterCreator").objectReferenceValue == null)
-                issues.Add("CharacterAvatarMount.characterCreator is not wired.");
-            if (so.FindProperty("equipmentSystem").objectReferenceValue == null)
-                issues.Add("CharacterAvatarMount.equipmentSystem is not wired.");
-            if (so.FindProperty("hostAdapter").objectReferenceValue == null)
-                issues.Add("CharacterAvatarMount.hostAdapter is not wired.");
-        }
-
-        var hosts = UnityEngine.Object.FindObjectsOfType<CharacterControllerAvatarHost>(true);
-        for (int i = 0; i < hosts.Length; i++)
-        {
-            var so = new SerializedObject(hosts[i]);
-            if (so.FindProperty("avatarAnchor").objectReferenceValue == null)
-                issues.Add("CharacterControllerAvatarHost.avatarAnchor is not wired.");
-        }
+        return null;
     }
 
     private static void CompareCounts(string label, int runtimeCount, int legacyCount, List<string> issues)

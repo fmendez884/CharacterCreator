@@ -2,6 +2,7 @@
   "name": "Ffxiv.CharacterCreator.Runtime",
   "rootNamespace": "Ffxiv.CharacterCreator.Runtime",
   "references": [
+    "UnityEngine.UI",
     "Unity.Addressables",
     "Unity.ResourceManager"
   ],
